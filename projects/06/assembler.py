@@ -2,13 +2,36 @@ import argparse
 from collections import defaultdict
 
 def to_binary(string):
-    return bin(int(string, 16))[2:].zfill(15)
-
-
+    return bin(int(string, 10))[2:].zfill(15)
 
 class Assembler:
   def __init__(self):
-    self.symbols = {}
+    self.symbols = {
+      'R0': '0',
+      'R1': '1',
+      'R2': '2',
+      'R3': '3',
+      'R4': '4',
+      'R5': '5',
+      'R6': '6',
+      'R7': '7',
+      'R8': '8',
+      'R9': '9',
+      'R10': '10',
+      'R11': '11',
+      'R12': '12',
+      'R13': '13',
+      'R14': '14',
+      'R15': '15',
+      'SP': '0',
+      'LCL': '1',
+      'ARG': '2',
+      'THIS': '3',
+      'THAT': '4',
+      'SCREEN': '16384',
+      'KBD': '24576',
+    }
+    self.ram = 16
     self.dests = defaultdict(lambda: '000', {
       'M': '001',
       'D': '010',
@@ -59,24 +82,49 @@ class Assembler:
     })
 
   def parse(self, filename: str):
+    outfile = filename.replace('.asm', '.hack')
     with open(filename, 'r') as f:
-      for result in self.parse_file(f):
-        print(result)
+      self.parse_labels(f)
+    with open(filename, 'r') as f:
+      with open(outfile, 'w') as out:
+        for result in self.parse_file(f):
+          out.write(f'{result}\n')
+
+  def prep_line(self, line):
+    if '//' in line:
+      line = line.split('//')[0]
+    line = line.strip()
+    return line
+
+  def parse_labels(self, f):
+    number = 1
+    for line in f:
+      line = self.prep_line(line)
+      if not line or line.startswith('//'):
+        continue
+      if line.startswith('('):
+        self.symbols[line[1:-1]] = f'{number-1}'
+      else:
+        number += 1
 
   def parse_file(self, f):
     for line in f:
-      if line.isspace() or line.startswith('//'):
+      line = self.prep_line(line)
+      if not line or line.startswith('//') or line.startswith('('):
         continue
       if line.startswith('@'):
-        yield self.parse_A(line.strip())
+        yield self.parse_A(line)
       else:
-        yield self.parse_C(line.strip())
+        yield self.parse_C(line)
 
   def parse_A(self, line):
     symbol = line[1:]
-    if symbol.isdigit():
+    if symbol[0].isdigit():
       return f'0{to_binary(symbol)}'
-    # TODO
+    if symbol not in self.symbols:
+      self.symbols[symbol] = f'{self.ram}'
+      self.ram += 1
+    return f'0{to_binary(self.symbols[symbol])}'
 
   def parse_C(self, line):
     dest, comp, jump = '', line, ''
