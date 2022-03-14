@@ -47,6 +47,10 @@ class Parser:
     self.line_number += 1
 
   @property
+  def comment(self):
+    return f'// {self.lines[self.line_number-1]}'
+
+  @property
   def current_line(self):
     return self.lines[self.line_number-1].split(' ')
 
@@ -117,7 +121,6 @@ class CodewWriter:
     self.f.write('\n')
 
   def writePushPop(self, command, segment, index):
-    print(command, segment, index)
     if command == C_PUSH:
       self.writePush(segment, index)
     # else:
@@ -141,21 +144,22 @@ class CodewWriter:
       'D=M',
     ]
     label = f'{command}{self.counter}'
-    if command == self.operations:
+    if command in self.operations:
       return [
         *self.pop,
         self.operations[command],
         *self.increment,
       ]
     elif command in self.jumps:
+      self.counter += 1
       return [
         *pop_set,
+        *self.pop,
         'D=M-D',
-        *self.pop,
         'M=-1',
-        *label,
+        f'@{label}',
         f'D;{self.jumps[command]}',
-        *self.pop,
+        *self.access,
         'M=0',
         f'({label})',
         *self.increment,
@@ -187,6 +191,7 @@ class Translator:
   def translate(self):
     while self.parser.hasMoreLines():
       self.parser.advance()
+      self.writer.write([self.parser.comment])
       if self.parser.commandType() == C_ARITHMETIC:
         self.writer.writeArithmetic(self.parser.arg1())
       elif self.parser.commandType() == C_PUSH:
