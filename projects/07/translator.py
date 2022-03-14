@@ -63,16 +63,121 @@ class Parser:
 
 class CodewWriter:
   def __init__(self, filename):
-    self.filename = filename
+    self.filename = filename.strip('.asm')
+    self.f = open(filename, 'w')
+    self.counter = 0
+    self.locations = {
+      'local': 'LCL',
+      'argument': 'ARG',
+      'this': 'THIS',
+      'that': 'THAT',
+    }
+    self.jumps = {
+      'eq': 'JEQ',
+      'gt': 'JGT',
+      'lt': 'JLT',
+    }
+    self.operations = {
+      'not': 'M=!M',
+      'neg': 'M=-M',
+    }
+    self.operators = {
+      'add': 'M=D+M',
+      'sub': 'M=M-D',
+      'and': 'M=D&M',
+      'or': 'M=D|M',
+    }
+    self.increment = [
+      '@SP',
+      'M=M+1'
+    ]
+    self.access = [
+      '@SP',
+      'A=M',
+    ]
+    self.pop = [
+      '@SP',
+      'M=M-1',
+      *self.access,
+    ]
   
-  def writeArithmetic(self, command):
-    print(command)
+  def getMemory(self, segment, index):
+    if segment in self.locations:
+      return self.locations[segment]
+    if segment == 'pointer':
+      return 'THIS' if index == '0' else 'THAT'
+    if segment == 'temp':
+      return str(int(index) + 5)
+    if segment == 'static':
+      return f'{self.filename}.{index}'
+    return index
+
+  def write(self, commands):
+    self.f.write('\n'.join(commands))
+    self.f.write('\n')
 
   def writePushPop(self, command, segment, index):
     print(command, segment, index)
+    if command == C_PUSH:
+      self.writePush(segment, index)
+    # else:
+    #   self.writePop(segment, index)
+
+  def writePush(self, segment, index):
+    address = self.getMemory(segment, index)
+    # Constant only
+    result = [
+      f'@{address}', 
+      'D=A',
+      *self.access,
+      'M=D',
+      *self.increment,
+    ]
+    self.write(result)
+
+  def arithmetic(self, command):   
+    pop_set =  [
+      *self.pop,
+      'D=M',
+    ]
+    label = f'{command}{self.counter}'
+    if command == self.operations:
+      return [
+        *self.pop,
+        self.operations[command],
+        *self.increment,
+      ]
+    elif command in self.jumps:
+      return [
+        *pop_set,
+        'D=M-D',
+        *self.pop,
+        'M=-1',
+        *label,
+        f'D;{self.jumps[command]}',
+        *self.pop,
+        'M=0',
+        f'({label})',
+        *self.increment,
+      ]
+    return [
+      *pop_set,
+      *self.pop,
+      self.operators[command],
+      *self.increment,
+    ]
+
+  def writeArithmetic(self, command):
+    result = self.arithmetic(command)
+    self.write(result)
 
   def close(self):
-    pass
+    self.write([
+      '(END)',
+      '@END',
+      '0;JMP',
+    ])
+    self.f.close()
 
 class Translator:
   def __init__(self, filename: str):
@@ -88,6 +193,7 @@ class Translator:
         self.writer.writePushPop(C_PUSH, self.parser.arg1(), self.parser.arg2())
       elif self.parser.commandType() == C_POP:
         self.writer.writePushPop(C_POP, self.parser.arg1(), self.parser.arg2())
+    self.writer.close()
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Translator')
