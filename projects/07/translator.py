@@ -67,7 +67,7 @@ class Parser:
 
 class CodewWriter:
   def __init__(self, filename):
-    self.filename = filename.strip('.asm')
+    self.filename = filename.split('\\')[-1].strip('.asm')
     self.f = open(filename, 'w')
     self.counter = 0
     self.locations = {
@@ -136,7 +136,7 @@ class CodewWriter:
         'M=D',
         *self.increment,
       ]
-    elif segment == 'temp':
+    elif segment == 'temp' or segment == 'pointer':
       result = [
         f'@{address}', 
         'D=M',
@@ -160,7 +160,7 @@ class CodewWriter:
 
   def writePop(self, segment, index):
     address = self.getMemory(segment, index)
-    if segment == 'temp':
+    if segment == 'temp' or segment == 'pointer':
       index = address
     result = [
       f'@{address}',
