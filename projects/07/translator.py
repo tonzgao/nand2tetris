@@ -65,17 +65,9 @@ class Parser:
   def arg2(self):
     return self.current_line[2]
 
-class CodewWriter:
-  def __init__(self, filename):
-    self.filename = filename.split('\\')[-1].strip('.asm')
-    self.f = open(filename, 'w')
+class CodeBuilder:
+  def __init__(self):
     self.counter = 0
-    self.locations = {
-      'local': 'LCL',
-      'argument': 'ARG',
-      'this': 'THIS',
-      'that': 'THAT',
-    }
     self.jumps = {
       'eq': 'JEQ',
       'gt': 'JGT',
@@ -91,19 +83,128 @@ class CodewWriter:
       'and': 'M=D&M',
       'or': 'M=D|M',
     }
-    self.increment = [
+
+  def _incr_stack_addr(self):
+    return [
       '@SP',
       'M=M+1'
     ]
-    self.access = [
+  def _decr_stack_addr(self):
+    return [
+      '@SP',
+      'M=M-1',
+    ]
+  def _get_stack_addr(self):
+    return [
       '@SP',
       'A=M',
     ]
-    self.pop = [
-      '@SP',
-      'M=M-1',
-      *self.access,
+  def _pop_no_set(self):
+    return [
+      *self._decr_stack_addr(),
+      *self._get_stack_addr(),
     ]
+  def _pop(self):
+    return [
+      *self._pop_no_set(),
+      'D=M',
+    ]
+  def _push_stack(self):
+    return [
+      *self._get_stack_addr(),
+      'M=D',
+      *self._incr_stack_addr(),
+    ]
+  def _access_value(self, address, index=None):
+    if not index:
+      return [
+        f'@{address}',
+        'D=M',
+      ]
+    return [
+      *self._get_address(address, index),
+      'A=D',
+      'D=M',
+    ]
+  def _get_address(self, base, offset='0'):
+    result = self._access_value(base)
+    if offset == '0':
+      return result
+    return [
+      *result,
+      f'@{offset}',
+      'D=D+A',
+    ]
+
+  def push_constant(self, constant):
+    return [
+      f'@{constant}', 
+      'D=A',
+      *self._push_stack()
+    ]
+  def push_memory(self, address, index=None):
+    return [
+      *self._access_value(address, index),
+      *self._push_stack(),
+    ]
+  def pop_to_address(self, base, offset):
+    return [
+      *self._get_address(base, offset),
+      *self._decr_stack_addr(),
+      'A=M+1',
+      'M=D',
+      'A=A-1',
+      'D=M',
+      'A=A+1',
+      'A=M',
+      'M=D',
+    ]
+  def arithmetic(self, command):   
+    label = f'{command}{self.counter}'
+    if command in self.operations:
+      return [
+        *self._pop_no_set(),
+        self.operations[command],
+        *self._incr_stack_addr(),
+      ]
+    elif command in self.jumps:
+      self.counter += 1
+      return [
+        *self._pop(),
+        *self._pop_no_set(),
+        'D=M-D',
+        'M=-1',
+        f'@{label}',
+        f'D;{self.jumps[command]}',
+        *self._get_stack_addr(),
+        'M=0',
+        f'({label})',
+        *self._incr_stack_addr(),
+      ]
+    return [
+      *self._pop(),
+      *self._pop_no_set(),
+      self.operators[command],
+      *self._incr_stack_addr(),
+    ]
+  def end(self):
+    return [
+      '(END)',
+      '@END',
+      '0;JMP',
+    ]
+
+class CodeWriter:
+  def __init__(self, filename):
+    self.filename = filename.split('\\')[-1].strip('.asm')
+    self.f = open(filename, 'w')
+    self.builder = CodeBuilder()
+    self.locations = {
+      'local': 'LCL',
+      'argument': 'ARG',
+      'this': 'THIS',
+      'that': 'THAT',
+    }
 
   def getMemory(self, segment, index):
     if segment in self.locations:
@@ -126,108 +227,37 @@ class CodewWriter:
     else:
       self.writePop(segment, index)
 
-  def writePush(self, segment, index):
+  def push(self, segment, index):
     address = self.getMemory(segment, index)
     if segment == 'constant':
-      result = [
-        f'@{address}', 
-        'D=A',
-        *self.access,
-        'M=D',
-        *self.increment,
-      ]
+      return self.builder.push_constant(address)
     elif segment == 'temp' or segment == 'pointer':
-      result = [
-        f'@{address}', 
-        'D=M',
-        *self.access,
-        'M=D',
-        *self.increment,
-      ]
-    else:
-      result = [
-        f'@{address}',
-        'D=M',
-        f'@{index}',
-        'D=D+A',
-        'A=D',
-        'D=M',
-        *self.access,
-        'M=D',
-        *self.increment,
-      ]
+      return self.builder.push_memory(address)
+    return self.builder.push_memory(address, index)
+
+  def writePush(self, segment, index):
+    result = self.push(segment, index)
     self.write(result)
 
   def writePop(self, segment, index):
     address = self.getMemory(segment, index)
     if segment == 'temp' or segment == 'pointer':
       index = address
-    result = [
-      f'@{address}',
-      'D=M',
-      f'@{index}',
-      'D=D+A',
-      '@SP',
-      'M=M-1',
-      'A=M+1',
-      'M=D',
-      'A=A-1',
-      'D=M',
-      'A=A+1',
-      'A=M',
-      'M=D',
-    ]
+    result = self.builder.pop_to_address(address, index)
     self.write(result)
 
-  def arithmetic(self, command):   
-    pop_set =  [
-      *self.pop,
-      'D=M',
-    ]
-    label = f'{command}{self.counter}'
-    if command in self.operations:
-      return [
-        *self.pop,
-        self.operations[command],
-        *self.increment,
-      ]
-    elif command in self.jumps:
-      self.counter += 1
-      return [
-        *pop_set,
-        *self.pop,
-        'D=M-D',
-        'M=-1',
-        f'@{label}',
-        f'D;{self.jumps[command]}',
-        *self.access,
-        'M=0',
-        f'({label})',
-        *self.increment,
-      ]
-    return [
-      *pop_set,
-      *self.pop,
-      self.operators[command],
-      *self.increment,
-    ]
-
   def writeArithmetic(self, command):
-    result = self.arithmetic(command)
+    result = self.builder.arithmetic(command)
     self.write(result)
 
   def close(self):
-    self.write([
-      '(END)',
-      '@END',
-      '0;JMP',
-    ])
+    self.write(self.builder.end())
     self.f.close()
 
 class Translator:
   def __init__(self, filename: str):
     self.parser = Parser(filename)
-    self.writer = CodewWriter(filename.replace('.vm', '.asm'))
+    self.writer = CodeWriter(filename.replace('.vm', '.asm'))
 
   def translate(self):
     while self.parser.hasMoreLines():

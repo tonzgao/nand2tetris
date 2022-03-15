@@ -9,8 +9,6 @@ M=M+1
 // pop local 0
 @LCL
 D=M
-@0
-D=D+A
 @SP
 M=M-1
 A=M+1
@@ -155,8 +153,6 @@ M=D
 // push local 0
 @LCL
 D=M
-@0
-D=D+A
 A=D
 D=M
 @SP
