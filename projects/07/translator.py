@@ -104,14 +104,14 @@ class CodewWriter:
       'M=M-1',
       *self.access,
     ]
-  
+
   def getMemory(self, segment, index):
     if segment in self.locations:
       return self.locations[segment]
     if segment == 'pointer':
       return 'THIS' if index == '0' else 'THAT'
     if segment == 'temp':
-      return str(int(index) + 5)
+      return f'{int(index)+5}'
     if segment == 'static':
       return f'{self.filename}.{index}'
     return index
@@ -123,18 +123,59 @@ class CodewWriter:
   def writePushPop(self, command, segment, index):
     if command == C_PUSH:
       self.writePush(segment, index)
-    # else:
-    #   self.writePop(segment, index)
+    else:
+      self.writePop(segment, index)
 
   def writePush(self, segment, index):
     address = self.getMemory(segment, index)
-    # Constant only
+    if segment == 'constant':
+      result = [
+        f'@{address}', 
+        'D=A',
+        *self.access,
+        'M=D',
+        *self.increment,
+      ]
+    elif segment == 'temp':
+      result = [
+        f'@{address}', 
+        'D=M',
+        *self.access,
+        'M=D',
+        *self.increment,
+      ]
+    else:
+      result = [
+        f'@{address}',
+        'D=M',
+        f'@{index}',
+        'D=D+A',
+        'A=D',
+        'D=M',
+        *self.access,
+        'M=D',
+        *self.increment,
+      ]
+    self.write(result)
+
+  def writePop(self, segment, index):
+    address = self.getMemory(segment, index)
+    if segment == 'temp':
+      index = address
     result = [
-      f'@{address}', 
-      'D=A',
-      *self.access,
+      f'@{address}',
+      'D=M',
+      f'@{index}',
+      'D=D+A',
+      '@SP',
+      'M=M-1',
+      'A=M+1',
       'M=D',
-      *self.increment,
+      'A=A-1',
+      'D=M',
+      'A=A+1',
+      'A=M',
+      'M=D',
     ]
     self.write(result)
 
