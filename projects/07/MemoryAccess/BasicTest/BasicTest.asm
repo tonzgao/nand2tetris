@@ -137,18 +137,12 @@ M=D
 @SP
 M=M+1
 // pop temp 6
-@11
-D=M
-@11
-D=D+A
 @SP
 M=M-1
-A=M+1
-M=D
-A=A-1
-D=M
-A=A+1
+@SP
 A=M
+D=M
+@11
 M=D
 // push local 0
 @LCL

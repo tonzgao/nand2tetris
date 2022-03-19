@@ -7,18 +7,12 @@ M=D
 @SP
 M=M+1
 // pop pointer 0
-@THIS
-D=M
-@THIS
-D=D+A
 @SP
 M=M-1
-A=M+1
-M=D
-A=A-1
-D=M
-A=A+1
+@SP
 A=M
+D=M
+@THIS
 M=D
 // push constant 3040
 @3040
@@ -29,18 +23,12 @@ M=D
 @SP
 M=M+1
 // pop pointer 1
-@THAT
-D=M
-@THAT
-D=D+A
 @SP
 M=M-1
-A=M+1
-M=D
-A=A-1
-D=M
-A=A+1
+@SP
 A=M
+D=M
+@THAT
 M=D
 // push constant 32
 @32

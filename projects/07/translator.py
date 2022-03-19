@@ -10,8 +10,8 @@ C_LABEL = 'C_LABEL'
 C_GOTO = 'C_GOTO'
 C_IF = 'C_IF'
 C_FUNCTION = 'C_FUNCTION'
-C_RETURN = 'C_RETURN'
 C_CALL = 'C_CALL'
+C_RETURN = 'C_RETURN'
 
 class Reader:
   def __init__(self, filename):
@@ -38,6 +38,12 @@ class Parser:
     self.symbols = defaultdict(lambda: C_ARITHMETIC, {
       'push': C_PUSH,
       'pop': C_POP,
+      'label': C_LABEL,
+      'goto': C_GOTO,
+      'if-goto': C_IF,
+      'function': C_FUNCTION,
+      'call': C_CALL,
+      'return': C_RETURN,
     })
 
   def hasMoreLines(self):
@@ -147,6 +153,12 @@ class CodeBuilder:
       *self._access_value(address, index),
       *self._push_stack(),
     ]
+  def pop_memory(self, address):
+    return [
+      *self._pop(),
+      f'@{address}',
+      'M=D',
+    ]
   def pop_to_address(self, base, offset):
     return [
       *self._get_address(base, offset),
@@ -158,6 +170,21 @@ class CodeBuilder:
       'A=A+1',
       'A=M',
       'M=D',
+    ]
+  def create_label(self, name):
+    return [
+      f'({name})',
+    ]
+  def goto(self, label):
+    return [
+      f'@{label}',
+      '0;JMP',
+    ]
+  def if_goto(self, label):
+    return [
+      *self._pop(),
+      f'@{label}',
+      'D;JNE',
     ]
   def arithmetic(self, command):   
     label = f'{command}{self.counter}'
@@ -178,7 +205,7 @@ class CodeBuilder:
         f'D;{self.jumps[command]}',
         *self._get_stack_addr(),
         'M=0',
-        f'({label})',
+        *self.create_label(label),
         *self._incr_stack_addr(),
       ]
     return [
@@ -239,16 +266,44 @@ class CodeWriter:
     result = self.push(segment, index)
     self.write(result)
 
-  def writePop(self, segment, index):
+  def pop(self, segment, index):
     address = self.getMemory(segment, index)
     if segment == 'temp' or segment == 'pointer':
-      index = address
-    result = self.builder.pop_to_address(address, index)
+      return self.builder.pop_memory(address)
+    return self.builder.pop_to_address(address, index)
+
+
+  def writePop(self, segment, index):
+    result = self.pop(segment, index)
     self.write(result)
 
   def writeArithmetic(self, command):
     result = self.builder.arithmetic(command)
     self.write(result)
+
+  def setFileName(self, filename):
+    pass
+
+  def writeLabel(self, label):
+    result = self.builder.create_label(label)
+    self.write(result)
+
+  def writeGoto(self, label):
+    result = self.builder.goto(label)
+    self.write(result)
+
+  def writeIf(self, label):
+    result = self.builder.if_goto(label)
+    self.write(result)
+
+  def writeFunction(self, functionName, nVars):
+    pass
+
+  def writeCall(self, functionName, nArgs):
+    pass
+
+  def writeReturn(self):
+    pass
 
   def close(self):
     self.write(self.builder.end())
@@ -269,6 +324,18 @@ class Translator:
         self.writer.writePushPop(C_PUSH, self.parser.arg1(), self.parser.arg2())
       elif self.parser.commandType() == C_POP:
         self.writer.writePushPop(C_POP, self.parser.arg1(), self.parser.arg2())
+      elif self.parser.commandType() == C_LABEL:
+        self.writer.writeLabel(self.parser.arg1())
+      elif self.parser.commandType() == C_GOTO:
+        self.writer.writeGoto(self.parser.arg1())
+      elif self.parser.commandType() == C_IF:
+        self.writer.writeIf(self.parser.arg1())
+      elif self.parser.commandType() == C_FUNCTION:
+        self.writer.writeFunction(self.parser.arg1(), self.parser.arg2())
+      elif self.parser.commandType() == C_CALL:
+        self.writer.writeCall(self.parser.arg1(), self.parser.arg2())
+      elif self.parser.commandType() == C_RETURN:
+        self.writer.writeReturn()
     self.writer.close()
 
 if __name__ == '__main__':
