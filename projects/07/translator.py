@@ -141,11 +141,35 @@ class CodeBuilder:
       f'@{offset}',
       'D=D+A',
     ]
-
-  def push_constant(self, constant):
+  def _create_constant(self, constant):
     return [
       f'@{constant}', 
       'D=A',
+    ]
+  def _set_pointer(self):
+    return [
+      '@SP',
+      'M=D',
+    ]
+  def _partial_return(self, address):
+    return [
+      '@R13',
+      'M=M-1',
+      'A=M',
+      'D=M',
+      f'@{address}',
+      'M=D',
+    ]
+
+  def boostrap(self):
+    return [
+      *self._create_constant(256),
+      *self._set_pointer()
+      # TODO: call Sys.init
+    ]
+  def push_constant(self, constant):
+    return [
+      *self._create_constant(constant),
       *self._push_stack()
     ]
   def push_memory(self, address, index=None):
@@ -214,6 +238,30 @@ class CodeBuilder:
       self.operators[command],
       *self._incr_stack_addr(),
     ]
+  def function(self, name, n_args):
+    result = [
+      *self.create_label(name)
+    ]
+    for _ in range(int(n_args)):
+      result += self.push_constant(0)
+    return result
+  def build_return(self):
+    return [
+      *self._access_value('LCL'),
+      '@R13',
+      'M=D',
+      *self.pop_to_address('ARG', '0'),
+      *self._get_address('ARG'),
+      'D=M+1',
+      *self._set_pointer(),
+      *self._partial_return('THAT'),
+      *self._partial_return('THIS'),
+      *self._partial_return('ARG'),
+      *self._partial_return('LCL'),
+      '@R13',
+      'M=M-1',
+      'A=M',
+    ]
   def end(self):
     return [
       '(END)',
@@ -232,6 +280,10 @@ class CodeWriter:
       'this': 'THIS',
       'that': 'THAT',
     }
+
+  def bootstrap(self):
+    result = self.builder.boostrap()
+    self.write(result)
 
   def getMemory(self, segment, index):
     if segment in self.locations:
@@ -272,7 +324,6 @@ class CodeWriter:
       return self.builder.pop_memory(address)
     return self.builder.pop_to_address(address, index)
 
-
   def writePop(self, segment, index):
     result = self.pop(segment, index)
     self.write(result)
@@ -297,13 +348,15 @@ class CodeWriter:
     self.write(result)
 
   def writeFunction(self, functionName, nVars):
-    pass
+    result = self.builder.function(functionName, nVars)
+    self.write(result)
 
   def writeCall(self, functionName, nArgs):
     pass
 
   def writeReturn(self):
-    pass
+    result = self.builder.build_return()
+    self.write(result)
 
   def close(self):
     self.write(self.builder.end())
@@ -314,7 +367,9 @@ class Translator:
     self.parser = Parser(filename)
     self.writer = CodeWriter(filename.replace('.vm', '.asm'))
 
-  def translate(self):
+  def translate(self, init: bool):
+    if init:
+      self.writer.bootstrap()
     while self.parser.hasMoreLines():
       self.parser.advance()
       self.writer.write([self.parser.comment])
@@ -341,6 +396,7 @@ class Translator:
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Translator')
   parser.add_argument('filename', help='input file')
+  parser.add_argument('--init', action='store_true')
   args = parser.parse_args()
   translator = Translator(args.filename)
-  translator.translate()
+  translator.translate(args.init)
