@@ -1,6 +1,8 @@
 import argparse
+import os
 from collections import defaultdict
 
+from builder import CodeBuilder
 
 # OP CODES
 C_ARITHMETIC = 'C_ARITHMETIC'
@@ -71,208 +73,9 @@ class Parser:
   def arg2(self):
     return self.current_line[2]
 
-class CodeBuilder:
-  def __init__(self):
-    self.counter = 0
-    self.jumps = {
-      'eq': 'JEQ',
-      'gt': 'JGT',
-      'lt': 'JLT',
-    }
-    self.operations = {
-      'not': 'M=!M',
-      'neg': 'M=-M',
-    }
-    self.operators = {
-      'add': 'M=D+M',
-      'sub': 'M=M-D',
-      'and': 'M=D&M',
-      'or': 'M=D|M',
-    }
-
-  def _incr_stack_addr(self):
-    return [
-      '@SP',
-      'M=M+1'
-    ]
-  def _decr_stack_addr(self):
-    return [
-      '@SP',
-      'M=M-1',
-    ]
-  def _get_stack_addr(self):
-    return [
-      '@SP',
-      'A=M',
-    ]
-  def _pop_no_set(self):
-    return [
-      *self._decr_stack_addr(),
-      *self._get_stack_addr(),
-    ]
-  def _pop(self):
-    return [
-      *self._pop_no_set(),
-      'D=M',
-    ]
-  def _push_stack(self):
-    return [
-      *self._get_stack_addr(),
-      'M=D',
-      *self._incr_stack_addr(),
-    ]
-  def _access_value(self, address, index=None):
-    if not index:
-      return [
-        f'@{address}',
-        'D=M',
-      ]
-    return [
-      *self._get_address(address, index),
-      'A=D',
-      'D=M',
-    ]
-  def _get_address(self, base, offset='0'):
-    result = self._access_value(base)
-    if offset == '0':
-      return result
-    return [
-      *result,
-      f'@{offset}',
-      'D=D+A',
-    ]
-  def _create_constant(self, constant):
-    return [
-      f'@{constant}', 
-      'D=A',
-    ]
-  def _set_pointer(self):
-    return [
-      '@SP',
-      'M=D',
-    ]
-  def _partial_return(self, address):
-    return [
-      '@R13',
-      'M=M-1',
-      'A=M',
-      'D=M',
-      f'@{address}',
-      'M=D',
-    ]
-
-  def boostrap(self):
-    return [
-      *self._create_constant(256),
-      *self._set_pointer()
-      # TODO: call Sys.init
-    ]
-  def push_constant(self, constant):
-    return [
-      *self._create_constant(constant),
-      *self._push_stack()
-    ]
-  def push_memory(self, address, index=None):
-    return [
-      *self._access_value(address, index),
-      *self._push_stack(),
-    ]
-  def pop_memory(self, address):
-    return [
-      *self._pop(),
-      f'@{address}',
-      'M=D',
-    ]
-  def pop_to_address(self, base, offset):
-    return [
-      *self._get_address(base, offset),
-      *self._decr_stack_addr(),
-      'A=M+1',
-      'M=D',
-      'A=A-1',
-      'D=M',
-      'A=A+1',
-      'A=M',
-      'M=D',
-    ]
-  def create_label(self, name):
-    return [
-      f'({name})',
-    ]
-  def goto(self, label):
-    return [
-      f'@{label}',
-      '0;JMP',
-    ]
-  def if_goto(self, label):
-    return [
-      *self._pop(),
-      f'@{label}',
-      'D;JNE',
-    ]
-  def arithmetic(self, command):   
-    label = f'{command}{self.counter}'
-    if command in self.operations:
-      return [
-        *self._pop_no_set(),
-        self.operations[command],
-        *self._incr_stack_addr(),
-      ]
-    elif command in self.jumps:
-      self.counter += 1
-      return [
-        *self._pop(),
-        *self._pop_no_set(),
-        'D=M-D',
-        'M=-1',
-        f'@{label}',
-        f'D;{self.jumps[command]}',
-        *self._get_stack_addr(),
-        'M=0',
-        *self.create_label(label),
-        *self._incr_stack_addr(),
-      ]
-    return [
-      *self._pop(),
-      *self._pop_no_set(),
-      self.operators[command],
-      *self._incr_stack_addr(),
-    ]
-  def function(self, name, n_args):
-    result = [
-      *self.create_label(name)
-    ]
-    for _ in range(int(n_args)):
-      result += self.push_constant(0)
-    return result
-  def build_return(self):
-    return [
-      *self._access_value('LCL'),
-      '@R13',
-      'M=D',
-      *self.pop_to_address('ARG', '0'),
-      *self._get_address('ARG'),
-      'D=M+1',
-      *self._set_pointer(),
-      *self._partial_return('THAT'),
-      *self._partial_return('THIS'),
-      *self._partial_return('ARG'),
-      *self._partial_return('LCL'),
-      '@R13',
-      'M=M-1',
-      'A=M',
-    ]
-  def end(self):
-    return [
-      '(END)',
-      '@END',
-      '0;JMP',
-    ]
-
 class CodeWriter:
   def __init__(self, filename):
-    self.filename = filename.split('\\')[-1].strip('.asm')
-    self.f = open(filename, 'w')
+    self.setFileName(filename)
     self.builder = CodeBuilder()
     self.locations = {
       'local': 'LCL',
@@ -282,7 +85,7 @@ class CodeWriter:
     }
 
   def bootstrap(self):
-    result = self.builder.boostrap()
+    result = self.builder.bootstrap()
     self.write(result)
 
   def getMemory(self, segment, index):
@@ -333,7 +136,11 @@ class CodeWriter:
     self.write(result)
 
   def setFileName(self, filename):
-    pass
+    filename = filename.replace('.vm', '.asm')
+    if '.asm' not in filename:
+      filename += '\\' + filename.split('\\')[-1] + '.asm'
+    self.filename = filename
+    self.f = open(self.filename, 'w')
 
   def writeLabel(self, label):
     result = self.builder.create_label(label)
@@ -352,7 +159,8 @@ class CodeWriter:
     self.write(result)
 
   def writeCall(self, functionName, nArgs):
-    pass
+    result = self.builder.call(functionName, nArgs)
+    self.write(result)
 
   def writeReturn(self):
     result = self.builder.build_return()
@@ -364,12 +172,25 @@ class CodeWriter:
 
 class Translator:
   def __init__(self, filename: str):
-    self.parser = Parser(filename)
-    self.writer = CodeWriter(filename.replace('.vm', '.asm'))
+    self.filename = filename
+    self.parser = None
+    self.writer = CodeWriter(filename)
 
-  def translate(self, init: bool):
-    if init:
-      self.writer.bootstrap()
+  def translate(self):
+    if self.filename.endswith('vm'):
+      return self._translate(self.filename)
+
+    self.writer.bootstrap()
+    self.writer.close()
+
+    files = [f for f in os.listdir(self.filename) if f.endswith('.vm')]
+    for file in files:
+      filename = os.path.join(self.filename, file)
+      self._translate(filename)
+
+  def _translate(self, filename: str):
+    self.parser = Parser(filename)
+    self.writer.setFileName(filename)
     while self.parser.hasMoreLines():
       self.parser.advance()
       self.writer.write([self.parser.comment])
@@ -396,7 +217,6 @@ class Translator:
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Translator')
   parser.add_argument('filename', help='input file')
-  parser.add_argument('--init', action='store_true')
   args = parser.parse_args()
   translator = Translator(args.filename)
-  translator.translate(args.init)
+  translator.translate()
