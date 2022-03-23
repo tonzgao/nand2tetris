@@ -201,6 +201,15 @@ class CodeBuilder:
       *self._access_value('LCL'),
       '@R13',
       'M=D',
+      # Save return address
+      *self.push_memory('R13'),
+      *self.push_constant(5),
+      *self.arithmetic('sub'),
+      *self._pop(),
+      'A=D',
+      'D=M',
+      *self._set_value('R14'),
+      # Restore state
       *self.pop_to_address('ARG', '0'),
       *self._get_address('ARG'),
       'D=M+1',
@@ -209,15 +218,14 @@ class CodeBuilder:
       *self._partial_return('THIS'),
       *self._partial_return('ARG'),
       *self._partial_return('LCL'),
-      '@R13',
-      'M=M-1',
-      'A=M',
+      # Goto return address
+      '@R14',
       'A=M',
       '0;JMP',
     ]
   def bootstrap(self):
     return [
-      *self._create_constant(256),
+      *self._create_constant(256+5),
       *self._set_pointer(),
       '@Sys.init',
       '0;JMP',
