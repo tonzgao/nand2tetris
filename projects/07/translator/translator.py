@@ -75,7 +75,8 @@ class Parser:
 
 class CodeWriter:
   def __init__(self, filename):
-    self.setFileName(filename)
+    self.filename = filename
+    self.f = open(self.filename + '.asm', 'w')
     self.builder = CodeBuilder()
     self.locations = {
       'local': 'LCL',
@@ -136,11 +137,7 @@ class CodeWriter:
     self.write(result)
 
   def setFileName(self, filename):
-    filename = filename.replace('.vm', '.asm')
-    if '.asm' not in filename:
-      filename += '\\' + filename.split('\\')[-1] + '.asm'
     self.filename = filename
-    self.f = open(self.filename, 'w')
 
   def writeLabel(self, label):
     result = self.builder.create_label(label)
@@ -173,27 +170,27 @@ class CodeWriter:
 class Translator:
   def __init__(self, filename: str):
     self.filename = filename
-    self.parser = None
-    self.writer = CodeWriter(filename)
 
   def translate(self):
     if self.filename.endswith('vm'):
-      return self._translate(self.filename)
-
-    self.writer.bootstrap()
+      self.writer = CodeWriter(self.filename.replace('.vm', ''))
+      self._translate(self.filename)
+    else:
+      filename = self.filename.split('\\')[-1]
+      self.writer = CodeWriter(os.path.join(self.filename, filename))
+      self.writer.bootstrap()
+      files = [f for f in os.listdir(self.filename) if f.endswith('.vm')]
+      for file in files:
+        filename = os.path.join(self.filename, file)
+        self._translate(filename)
     self.writer.close()
-
-    files = [f for f in os.listdir(self.filename) if f.endswith('.vm')]
-    for file in files:
-      filename = os.path.join(self.filename, file)
-      self._translate(filename)
 
   def _translate(self, filename: str):
     self.parser = Parser(filename)
     self.writer.setFileName(filename)
     while self.parser.hasMoreLines():
       self.parser.advance()
-      self.writer.write([self.parser.comment])
+      self.writer.write([self.parser.comment]) # TODO: move to same line
       if self.parser.commandType() == C_ARITHMETIC:
         self.writer.writeArithmetic(self.parser.arg1())
       elif self.parser.commandType() == C_PUSH:
@@ -212,7 +209,6 @@ class Translator:
         self.writer.writeCall(self.parser.arg1(), self.parser.arg2())
       elif self.parser.commandType() == C_RETURN:
         self.writer.writeReturn()
-    self.writer.close()
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Translator')

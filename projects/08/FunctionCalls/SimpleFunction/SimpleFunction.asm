@@ -153,6 +153,8 @@ M=D
 @R13
 M=M-1
 A=M
+A=M // test
+0;JMP
 (END)
 @END
 0;JMP

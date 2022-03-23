@@ -169,9 +169,9 @@ class CodeBuilder:
       result += self.push_constant(0)
     return result
   def call(self, name, n_args):
-    label = f'f_{name}_{n_args}'
+    label = f'return_{name}_{self.counter}'
     result = [
-        *self._get_stack_addr(),
+        *self._access_value('SP'),
         *self._set_value('R13'),
         f'@{label}',
         'D=A',
@@ -194,6 +194,7 @@ class CodeBuilder:
       *self.goto(name),
       *self.create_label(label),
     ]
+    self.counter += 1
     return result
   def build_return(self):
     return [
@@ -211,12 +212,15 @@ class CodeBuilder:
       '@R13',
       'M=M-1',
       'A=M',
+      'A=M',
+      '0;JMP',
     ]
   def bootstrap(self):
     return [
       *self._create_constant(256),
       *self._set_pointer(),
-      *self.call('Sys.init', 0),
+      '@Sys.init',
+      '0;JMP',
     ]
   def end(self):
     return [
