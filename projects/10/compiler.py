@@ -32,17 +32,19 @@ class JackTokenizer:
     self.counter += 1
     if current in symbols:
       self.token = current
+      return
     if current.isspace():
       return self.advance()
     result = current
-    while not current.isspace() and current not in symbols:
-      current = self.text[self.counter]
-      if current in symbols:
-        break
-      result += current
+    if current == '"':
+      while (current := self.text[self.counter]) != '"':
+        result += current
+        self.counter += 1
       self.counter += 1
-      if not self.hasMoreTokens():
-        break
+    else:
+      while (current := self.text[self.counter]) not in symbols and not current.isspace():
+        result += current
+        self.counter += 1
     self.token = result
 
   def tokenType(self):
@@ -57,20 +59,19 @@ class JackTokenizer:
     return 'identifier'
 
   def keyWord(self):
-    if self.token in keywords:
-      return self.token
+    return f'<keyword>{self.token}</keyword>'
 
   def symbol(self):
-    return self.token
+    return f'<symbol>{self.token}</symbol>'
 
   def identifier(self):
-    return self.token
+    return f'<identifier>{self.token}</identifier>'
 
   def intVal(self):
-    return int(self.token)
+    return f'<integerConstant>{int(self.token)}</integerConstant>'
 
   def stringVal(self):
-    return self.token
+    return f'<stringConstant>{self.token[1:]}</stringConstant>'
 
 class CompilationEngine:
   def __init__(self, filename, outfile):
