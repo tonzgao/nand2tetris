@@ -1,4 +1,6 @@
 import argparse
+from dicttoxml import dicttoxml
+from xml.dom.minidom import parseString
 
 keywords = set([
   'class', 'constructor', 'function', 'method', 'field', 'static', 'var', 'int', 'char', 'boolean', 'void', 'true', 'false', 'null', 'this', 'let', 'do', 'if', 'else', 'while', 'return'
@@ -59,36 +61,128 @@ class JackTokenizer:
     return 'identifier'
 
   def keyWord(self):
-    return f'<keyword>{self.token}</keyword>'
+    return {'keyword': self.token}
 
   def symbol(self):
-    return f'<symbol>{self.token}</symbol>'
+    return {'symbol': self.token}
 
   def identifier(self):
-    return f'<identifier>{self.token}</identifier>'
+    return {'identifier': self.token}
 
   def intVal(self):
-    return f'<integerConstant>{int(self.token)}</integerConstant>'
+    return {'integerConstant': int(self.token)}
 
   def stringVal(self):
-    return f'<stringConstant>{self.token[1:]}</stringConstant>'
+    return {'stringConstant': self.token[1:]}
 
+  def current(self):
+    case = self.tokenType()
+    if case == 'symbol':
+      return self.symbol()
+    if case == 'keyword':
+      return self.keyWord()
+    if case == 'integerConstant':
+      return self.intVal()
+    if case == 'stringConstant':
+      return self.stringVal()
+    return self.identifier()
+
+  def next(self):
+    self.advance()
+    return self.current()
+
+  def conditional_next(self, f):
+    if f(self.token, self.tokenType):
+      return self.next()
+    return self.current()
+    
 class CompilationEngine:
   def __init__(self, filename, outfile):
     self.tokenizer = JackTokenizer(filename)
-    self.file = outfile
+    self.tokenizer.removeComments()
+    # self.file = open(outfile, 'w')
 
   def compileClass(self):
-    pass
+    declaration = self.tokenizer.next()
+    className = self.tokenizer.next()
+    opening = self.tokenizer.next()
+    result = [
+      declaration,
+      className,
+      opening,
+    ]
+    while self.tokenizer.token != '}':
+      declaration = self.tokenizer.next()
+      if self.tokenizer.token in ['field', 'static']:
+        result.append(self.compileClassVarDec())
+      elif self.tokenizer.token in ['constructor', 'function', 'method']:
+        result.append(self.compileSubroutine())
+    result.append(self.tokenizer.current())
+    return {
+      'class': result
+    }
 
   def compileClassVarDec(self):
-    pass
+    declaration = self.tokenizer.current()
+    type = self.tokenizer.next()
+    name = self.tokenizer.next()
+    symbol = self.tokenizer.next()
+    result = [
+      declaration,
+      type,
+      name,
+      symbol,
+    ]
+    while symbol == ',':
+      name = self.tokenizer.next()
+      symbol = self.tokenizer.next()
+      result += [
+        name,
+        symbol,
+      ]
+    return {
+      'classVarDec': result
+    }
+    
 
   def compileSubroutine(self):
-    pass
+    declaration = self.tokenizer.current()
+    returnType = self.tokenizer.next()
+    name = self.tokenizer.next()
+    popening = self.tokenizer.next()
+    result = [
+      declaration,
+      returnType,
+      name,
+      popening,
+    ]
+    
+    self.tokenizer.next()
+    if self.tokenizer.token != ')':
+      result.append(self.compileParameterList())
+    result.append(self.tokenizer.current())
+      
+
+    sopening = self.tokenizer.next()
+    varDec = self.compileVarDec()
+    statements = self.compileStatements()
+    sclosing = self.tokenizer.current()
+
+    return {
+      'subroutineDec': result
+    }
+
 
   def compileParameterList(self):
-    pass
+    result = []
+    while self.tokenizer.token != ')':
+      result.append(self.tokenizer.next())
+      symbol = self.tokenizer.next()
+      if symbol == ',':
+        result.append(symbol)
+    return {
+      'parameterList': result
+    }
 
   def compileVarDec(self):
     pass
@@ -122,14 +216,14 @@ class CompilationEngine:
 
 class JackAnalyzer:
   def __init__(self, filename: str):
-    self.filename = filename
-    self.tokenizer = JackTokenizer(filename)
+    self.engine = CompilationEngine(filename, filename.replace('.jack', '.xml'))
 
   def analyze(self):
-    self.tokenizer.removeComments()
-    while self.tokenizer.hasMoreTokens():
-      self.tokenizer.advance()
-      print(self.tokenizer.tokenType(), self.tokenizer.token)
+    result = self.engine.compileClass()
+    xml = dicttoxml(result, attr_type = False, root=False)
+    dom = parseString(xml)
+    test = dom.toprettyxml()
+    print(test.replace('<item>', '').replace('</item>', '').replace('<item/>', ''))
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Compiler')
