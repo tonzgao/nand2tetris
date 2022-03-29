@@ -99,10 +99,10 @@ class JackTokenizer:
     return self.current()
 
 class CompilationEngine:
-  def __init__(self, filename, outfile):
+  def __init__(self, filename):
     self.tokenizer = JackTokenizer(filename)
+    self.outfile = filename.replace('.jack', '_output.xml')
     self.tokenizer.removeComments()
-    # self.file = open(outfile, 'w')
 
   def compileClass(self):
     declaration = self.tokenizer.next()
@@ -162,7 +162,6 @@ class CompilationEngine:
     ]
     while self.tokenizer.peek() == 'var':
       result.append(self.compileVarDec())
-    print('here', result)
     statements = self.compileStatements()
     sclosing = self.tokenizer.next()
     result += [statements, sclosing]
@@ -223,43 +222,190 @@ class CompilationEngine:
       'statements': result
     }
 
+  def compileSubroutineCall(self):
+    name = self.tokenizer.next()
+    result = [name]
+    if self.tokenizer.peek() == '.':
+      dot = self.tokenizer.next()
+      call = self.tokenizer.next()
+      result += [dot, call]
+    eopen = self.tokenizer.next()
+    expressionList = self.compileExpressionList()
+    eclose = self.tokenizer.next()
+    result += [eopen, expressionList, eclose]
+    return result
+
   def compileDo(self):
-    pass
+    do = self.tokenizer.next()
+    subcall = self.compileSubroutineCall()
+    semi = self.tokenizer.next()
+    return {
+      'doStatement': [
+        do,
+        subcall,
+        semi,
+      ]
+    }
+
 
   def compileLet(self):
     let = self.tokenizer.next()
     name = self.tokenizer.next()
-    opening = self.tokenizer.next()
-    
+    result = [let, name]
+    if self.tokenizer.peek() == '[':
+      opening = self.tokenizer.next()
+      expression = self.compileExpression()
+      closing = self.tokenizer.next()
+      result += [
+        opening, expression, closing
+      ]
+    equals = self.tokenizer.next()
+    expression = self.compileExpression()
+    semi = self.tokenizer.next()
+    result += [equals, expression, semi]
+    return {
+      'letStatement': result
+    }
+
 
   def compileWhile(self):
-    pass
+    wdeclare = self.tokenizer.next()
+    eopen = self.tokenizer.next()
+    expression = self.compileExpression()
+    eclose = self.tokenizer.next()
+    sopen = self.tokenizer.next()
+    statements = self.compileStatements()
+    sclose = self.tokenizer.next()
+    return {
+      'whileStatement': [
+        wdeclare,
+        eopen,
+        expression,
+        eclose,
+        sopen,
+        statements,
+        sclose
+      ]
+    }
 
   def compileReturn(self):
-    pass
+    result = [self.tokenizer.next()]
+    if self.tokenizer.peek() != ';':
+      expression = self.compileExpression()
+      result.append(expression)
+    return {
+      'returnStatement': result + [self.tokenizer.next()] # Semi
+    }
+    
 
   def compileIf(self):
-    pass
+    ifdeclare = self.tokenizer.next()
+    ifopen = self.tokenizer.next()
+    ifexpr = self.compileExpression()
+    ifclose = self.tokenizer.next()
+    sopen = self.tokenizer.next()
+    ifstatements = self.compileStatements()
+    sclose = self.tokenizer.next()
+    result = [
+      ifdeclare,
+      ifopen,
+      ifexpr,
+      ifclose,
+      sopen,
+      ifstatements,
+      sclose
+    ]
+    if self.tokenizer.peek() == 'else':
+      elsedeclare = self.tokenizer.next()
+      elseopen = self.tokenizer.next()
+      elsestatements = self.compileStatements()
+      elseclose = self.tokenizer.next()
+      result += [
+        elsedeclare,
+        elseopen,
+        elsestatements,
+        elseclose
+      ]
+    return {
+      'ifStatement': result
+    }
 
   def compileExpression(self):
-    pass
+    term = self.compileTerm()
+    result = [term]
+    while self.tokenizer.peek() in ['+', '-', '*', '/', '&', '|', '<', '>', '=']:
+      op = self.tokenizer.next()
+      result += [op, self.compileTerm()]
+    return {
+      'expression': result
+    }
 
   def compileTerm(self):
-    pass
+    term = self.tokenizer.next()
+    if term == '(': # Expression
+      expression = self.compileExpression()
+      closing = self.tokenizer.next()
+      return {
+        'term': [
+          term,
+          expression,
+          closing
+        ]
+      }
+    elif term in ['-', '~']: # Unary operator
+      actualTerm = self.compileTerm()
+      return {
+        'term': [term, actualTerm]
+      }
+    elif self.tokenizer.peek() == '[': 
+      opening = self.tokenizer.next()
+      expression = self.compileExpression()
+      closing = self.tokenizer.next()
+      return {
+        'term': [
+          term,
+          opening,
+          expression,
+          closing
+        ]
+      }
+    elif self.tokenizer.peek() == '(':
+      opening = self.tokenizer.next()
+      subcall = self.compileSubroutineCall()
+      closing = self.tokenizer.next()
+      return {
+        'term': [
+          term,
+          opening,
+          subcall,
+          closing
+        ]
+      }
+    return {
+      'term': term
+    }
 
   def compileExpressionList(self):
-    pass
+    if self.tokenizer.peek() == ')':
+      return {'expressionList': []}
+    result = self.compileExpression()
+    while self.tokenizer.peek() == ',':
+      result += [self.tokenizer.next(), self.compileExpression()]
+    return {
+      'expressionList': result
+    }
 
 class JackAnalyzer:
   def __init__(self, filename: str):
-    self.engine = CompilationEngine(filename, filename.replace('.jack', '.xml'))
+    self.engine = CompilationEngine(filename)
 
   def analyze(self):
     result = self.engine.compileClass()
     xml = dicttoxml(result, attr_type = False, root=False)
-    dom = parseString(xml)
-    test = dom.toprettyxml()
-    print(test.replace('<item>', '').replace('</item>', '').replace('<item/>', ''))
+    dom = parseString(xml).toprettyxml()
+    formatted = '\n'.join([x.replace('\t', '  ') for x in dom.replace('<item>', '').replace('</item>', '').replace('<item/>', '').split('\n')[1:] if x.strip()])
+    with open(self.engine.outfile, 'w') as f:
+      f.write(formatted)
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Compiler')
