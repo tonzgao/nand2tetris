@@ -29,6 +29,13 @@ class JackTokenizer:
   def hasMoreTokens(self):
     return self.counter < len(self.text) - 1
 
+  def peek(self):
+    counter, token = self.counter, self.token
+    self.advance()
+    result = self.token
+    self.counter, self.token = counter, token
+    return result
+
   def advance(self):
     current = self.text[self.counter]
     self.counter += 1
@@ -91,11 +98,6 @@ class JackTokenizer:
     self.advance()
     return self.current()
 
-  def conditional_next(self, f):
-    if f(self.token, self.tokenType):
-      return self.next()
-    return self.current()
-    
 class CompilationEngine:
   def __init__(self, filename, outfile):
     self.tokenizer = JackTokenizer(filename)
@@ -111,11 +113,10 @@ class CompilationEngine:
       className,
       opening,
     ]
-    while self.tokenizer.token != '}':
-      declaration = self.tokenizer.next()
-      if self.tokenizer.token in ['field', 'static']:
+    while (peek := self.tokenizer.peek()) != '}':
+      if peek in ['field', 'static']:
         result.append(self.compileClassVarDec())
-      elif self.tokenizer.token in ['constructor', 'function', 'method']:
+      elif peek in ['constructor', 'function', 'method']:
         result.append(self.compileSubroutine())
     result.append(self.tokenizer.current())
     return {
@@ -123,7 +124,7 @@ class CompilationEngine:
     }
 
   def compileClassVarDec(self):
-    declaration = self.tokenizer.current()
+    declaration = self.tokenizer.next()
     type = self.tokenizer.next()
     name = self.tokenizer.next()
     symbol = self.tokenizer.next()
@@ -144,57 +145,92 @@ class CompilationEngine:
       'classVarDec': result
     }
     
-
   def compileSubroutine(self):
-    declaration = self.tokenizer.current()
+    declaration = self.tokenizer.next()
     returnType = self.tokenizer.next()
     name = self.tokenizer.next()
     popening = self.tokenizer.next()
+    parameters = self.compileParameterList()
+    sopen = self.tokenizer.next()
     result = [
       declaration,
       returnType,
       name,
       popening,
+      parameters,
+      sopen
     ]
-    
-    self.tokenizer.next()
-    if self.tokenizer.token != ')':
-      result.append(self.compileParameterList())
-    result.append(self.tokenizer.current())
-      
-
-    sopening = self.tokenizer.next()
-    varDec = self.compileVarDec()
+    while self.tokenizer.peek() == 'var':
+      result.append(self.compileVarDec())
+    print('here', result)
     statements = self.compileStatements()
-    sclosing = self.tokenizer.current()
-
+    sclosing = self.tokenizer.next()
+    result += [statements, sclosing]
     return {
       'subroutineDec': result
     }
 
-
   def compileParameterList(self):
     result = []
-    while self.tokenizer.token != ')':
+    while self.tokenizer.peek() != ')':
       result.append(self.tokenizer.next())
       symbol = self.tokenizer.next()
-      if symbol == ',':
-        result.append(symbol)
-    return {
-      'parameterList': result
-    }
+      if symbol != ',':
+        return [
+          {'parameterList': result},
+          symbol
+        ]
+      result.append(symbol)
+    if not len(result):
+      return [self.tokenizer.next()]
 
   def compileVarDec(self):
-    pass
-
+    declaration = self.tokenizer.next()
+    type = self.tokenizer.next()
+    name = self.tokenizer.next()
+    symbol = self.tokenizer.next()
+    result = [
+      declaration,
+      type,
+      name,
+      symbol,
+    ]
+    while symbol == ',':
+      name = self.tokenizer.next()
+      symbol = self.tokenizer.next()
+      result += [
+        name,
+        symbol,
+      ]
+    return {
+      'varDec': result
+    }
+    
   def compileStatements(self):
-    pass
+    result = []
+    while (peek := self.tokenizer.peek()) != '}':
+      if peek == 'do':
+        result.append(self.compileDo())
+      if peek == 'let':
+        result.append(self.compileLet())
+      if peek == 'while':
+        result.append(self.compileWhile())
+      if peek == 'if':
+        result.append(self.compileIf())
+      if peek == 'return':
+        result.append(self.compileReturn())
+    return {
+      'statements': result
+    }
 
   def compileDo(self):
     pass
 
   def compileLet(self):
-    pass
+    let = self.tokenizer.next()
+    name = self.tokenizer.next()
+    opening = self.tokenizer.next()
+    
 
   def compileWhile(self):
     pass
