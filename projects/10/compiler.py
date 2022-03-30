@@ -1,429 +1,159 @@
-import argparse
-from dicttoxml import dicttoxml
-from xml.dom.minidom import parseString
+from .analyzer import JackTokenizer
 
-keywords = set([
-  'class', 'constructor', 'function', 'method', 'field', 'static', 'var', 'int', 'char', 'boolean', 'void', 'true', 'false', 'null', 'this', 'let', 'do', 'if', 'else', 'while', 'return'
-])
-symbols = set([
-  '{', '}', '(', ')', '[', ']', '.', ',', ';', '+', '-', '*', '/', '&', '|', '<', '>', '=', '~'
-])
+class SymbolTable:
+  def __init__(self):
+    self.table = {}
 
-class JackTokenizer:
+  def reset(self):
+    self.table = {}
+
+  def define(self, name, type, kind):
+    pass
+
+  def varCount(self, kind):
+    pass
+
+  def kindOf(self, name):
+    return
+
+  def typeOf(self, name):
+    return
+
+  def indexOf(self, name):
+    return
+
+class VMWriter:
   def __init__(self, filename):
-    with open(filename, 'r') as f:
-      self.text = f.read()
-    self.counter = 0
-    self.token = ''
+    pass
 
-  def removeComments(self):
-    single_lines = self.text.split('//')
-    single_lines_removed = ''.join([
-      line.split('\n', 1)[-1] for line in single_lines
-    ])
-    all_comments = single_lines_removed.split('/**')
-    self.text = ''.join([
-      line.split('*/', 1)[-1] for line in all_comments
-    ])
+  def writePush(self, segment, index):
+    pass
 
-  def hasMoreTokens(self):
-    return self.counter < len(self.text) - 1
+  def writePop(self, segment, index):
+    pass
 
-  def peek(self):
-    counter, token = self.counter, self.token
-    self.advance()
-    result = self.token
-    self.counter, self.token = counter, token
-    return result
+  def writeArithmetic(self, command):
+    pass
 
-  def advance(self):
-    current = self.text[self.counter]
-    self.counter += 1
-    if current in symbols:
-      self.token = current
-      return
-    if current.isspace():
-      return self.advance()
-    result = current
-    if current == '"':
-      while (current := self.text[self.counter]) != '"':
-        result += current
-        self.counter += 1
-      self.counter += 1
-    else:
-      while (current := self.text[self.counter]) not in symbols and not current.isspace():
-        result += current
-        self.counter += 1
-    self.token = result
+  def writeLabel(self, label):
+    pass
 
-  def tokenType(self):
-    if self.token in symbols:
-      return 'symbol'
-    if self.token in keywords:
-      return 'keyword'
-    if self.token.isdigit():
-      return 'integerConstant'
-    if self.token[0] == '"':
-      return 'stringConstant'
-    return 'identifier'
+  def writeGoto(self, label):
+    pass
 
-  def keyWord(self):
-    return {'keyword': self.token}
+  def writeIf(self, label):
+    pass
 
-  def symbol(self):
-    return {'symbol': self.token}
+  def writeCall(self, name, nArgs):
+    pass
 
-  def identifier(self):
-    return {'identifier': self.token}
+  def writeFunction(self, name, nVars):
+    pass
 
-  def intVal(self):
-    return {'integerConstant': int(self.token)}
+  def writeReturn(self):
+    pass
 
-  def stringVal(self):
-    return {'stringConstant': self.token[1:]}
-
-  def current(self):
-    case = self.tokenType()
-    if case == 'symbol':
-      return self.symbol()
-    if case == 'keyword':
-      return self.keyWord()
-    if case == 'integerConstant':
-      return self.intVal()
-    if case == 'stringConstant':
-      return self.stringVal()
-    return self.identifier()
-
-  def next(self):
-    self.advance()
-    return self.current()
+  def close(self):
+    pass
 
 class CompilationEngine:
   def __init__(self, filename):
-    self.tokenizer = JackTokenizer(filename)
-    self.outfile = filename.replace('.jack', '_output.xml')
-    self.tokenizer.removeComments()
+    pass
 
   def compileClass(self):
-    declaration = self.tokenizer.next()
-    className = self.tokenizer.next()
-    opening = self.tokenizer.next()
-    result = [
-      declaration,
-      className,
-      opening,
-    ]
-    while (peek := self.tokenizer.peek()) != '}':
-      if peek in ['field', 'static']:
-        result.append(self.compileClassVarDec())
-      elif peek in ['constructor', 'function', 'method']:
-        result.append(self.compileSubroutine())
-      else:
-        raise Exception('Unexpected token: ', self.tokenizer.current(), result, peek)
-    result.append(self.tokenizer.current())
-    return {
-      'class': result
-    }
+    pass
 
   def compileClassVarDec(self):
-    declaration = self.tokenizer.next()
-    type = self.tokenizer.next()
-    name = self.tokenizer.next()
-    symbol = self.tokenizer.next()
-    result = [
-      declaration,
-      type,
-      name,
-      symbol,
-    ]
-    while self.tokenizer.token == ',':
-      name = self.tokenizer.next()
-      symbol = self.tokenizer.next()
-      result += [
-        name,
-        symbol,
-      ]
-    return {
-      'classVarDec': result
-    }
-    
+    pass
+
   def compileSubroutine(self):
-    declaration = self.tokenizer.next()
-    returnType = self.tokenizer.next()
-    name = self.tokenizer.next()
-    popening = self.tokenizer.next()
-    parameters = self.compileParameterList()
-    result = [
-      declaration,
-      returnType,
-      name,
-      popening,
-      parameters,
-    ]
-    subroutine = [self.tokenizer.next()]
-    while self.tokenizer.peek() == 'var':
-      subroutine.append(self.compileVarDec())
-    statements = self.compileStatements()
-    sclosing = self.tokenizer.next()
-    subroutine += [statements, sclosing]
-    result.append({
-      'subroutineBody': subroutine
-    })
-    return {
-      'subroutineDec': result
-    }
+    pass
 
   def compileParameterList(self):
-    result = []
-    while self.tokenizer.peek() != ')':
-      result.append(self.tokenizer.next())
-      result.append(self.tokenizer.next())
-      symbol = self.tokenizer.next()
-      if self.tokenizer.token != ',':
-        return [
-          {'parameterList': result},
-          symbol
-        ]
-      result.append(symbol)
-    return [
-       {'parameterList': result},
-      self.tokenizer.next()
-    ]
+    pass
 
-  def compileVarDec(self):
-    declaration = self.tokenizer.next()
-    type = self.tokenizer.next()
-    name = self.tokenizer.next()
-    symbol = self.tokenizer.next()
-    result = [
-      declaration,
-      type,
-      name,
-      symbol,
-    ]
-    while self.tokenizer.token == ',':
-      name = self.tokenizer.next()
-      symbol = self.tokenizer.next()
-      result += [
-        name,
-        symbol,
-      ]
-    return {
-      'varDec': result
-    }
-    
+  def compileVarDec(self): 
+    pass
+
   def compileStatements(self):
-    result = []
-    while (peek := self.tokenizer.peek()) != '}':
-      if peek == 'do':
-        result.append(self.compileDo())
-      elif peek == 'let':
-        result.append(self.compileLet())
-      elif peek == 'while':
-        result.append(self.compileWhile())
-      elif peek == 'if':
-        result.append(self.compileIf())
-      elif peek == 'return':
-        result.append(self.compileReturn())
-      else:
-        raise Exception('Unexpected statement token: ', self.tokenizer.current(), peek)
-    return {
-      'statements': result
-    }
-
-  def compileExpressionListHelper(self):
-    eopen = self.tokenizer.next()
-    expressionList = self.compileExpressionList()
-    eclose = self.tokenizer.next()
-    return [eopen, expressionList, eclose]
-
-  def compileSubroutineCallHelper(self, result):
-    if self.tokenizer.peek() == '.':
-      dot = self.tokenizer.next()
-      call = self.tokenizer.next()
-      result += [dot, call]
-    result += self.compileExpressionListHelper()
-    return result
-
-  def compileSubroutineCall(self):
-    name = self.tokenizer.next()
-    result = [name]
-    self.compileSubroutineCallHelper(result)
-    return result
-
-
-  def compileDo(self):
-    do = self.tokenizer.next()
-    subcall = self.compileSubroutineCall()
-    semi = self.tokenizer.next()
-    return {
-      'doStatement': [
-        do,
-        subcall,
-        semi,
-      ]
-    }
-
+    pass
 
   def compileLet(self):
-    let = self.tokenizer.next()
-    name = self.tokenizer.next()
-    result = [let, name]
-    if self.tokenizer.peek() == '[':
-      opening = self.tokenizer.next()
-      expression = self.compileExpression()
-      closing = self.tokenizer.next()
-      result += [
-        opening, expression, closing
-      ]
-    equals = self.tokenizer.next()
-    expression = self.compileExpression()
-    semi = self.tokenizer.next()
-    result += [equals, expression, semi]
-    return {
-      'letStatement': result
-    }
-
-
-  def compileWhile(self):
-    wdeclare = self.tokenizer.next()
-    eopen = self.tokenizer.next()
-    expression = self.compileExpression()
-    eclose = self.tokenizer.next()
-    sopen = self.tokenizer.next()
-    statements = self.compileStatements()
-    sclose = self.tokenizer.next()
-    return {
-      'whileStatement': [
-        wdeclare,
-        eopen,
-        expression,
-        eclose,
-        sopen,
-        statements,
-        sclose
-      ]
-    }
-
-  def compileReturn(self):
-    result = [self.tokenizer.next()]
-    if self.tokenizer.peek() != ';':
-      expression = self.compileExpression()
-      result.append(expression)
-    return {
-      'returnStatement': result + [self.tokenizer.next()] # Semi
-    }
-    
+    pass
 
   def compileIf(self):
-    ifdeclare = self.tokenizer.next()
-    ifopen = self.tokenizer.next()
-    ifexpr = self.compileExpression()
-    ifclose = self.tokenizer.next()
-    sopen = self.tokenizer.next()
-    ifstatements = self.compileStatements()
-    sclose = self.tokenizer.next()
-    result = [
-      ifdeclare,
-      ifopen,
-      ifexpr,
-      ifclose,
-      sopen,
-      ifstatements,
-      sclose
-    ]
-    if self.tokenizer.peek() == 'else':
-      elsedeclare = self.tokenizer.next()
-      elseopen = self.tokenizer.next()
-      elsestatements = self.compileStatements()
-      elseclose = self.tokenizer.next()
-      result += [
-        elsedeclare,
-        elseopen,
-        elsestatements,
-        elseclose
-      ]
-    return {
-      'ifStatement': result
-    }
+    pass
+
+  def compileWhile(self):
+    pass
+
+  def compileDo(self):
+    pass
+
+  def compileReturn(self):
+    pass
 
   def compileExpression(self):
-    term = self.compileTerm()
-    result = [term]
-    while self.tokenizer.peek() in ['+', '-', '*', '/', '&', '|', '<', '>', '=']:
-      op = self.tokenizer.next()
-      result += [op, self.compileTerm()]
-    return {
-      'expression': result
-    }
+    pass
 
   def compileTerm(self):
-    term = self.tokenizer.next()
-    if self.tokenizer.token == '(': # Expression
-      expression = self.compileExpression()
-      closing = self.tokenizer.next()
-      return {
-        'term': [
-          term,
-          expression,
-          closing
-        ]
-      }
-    elif self.tokenizer.token in ['-', '~']: # Unary operator
-      actualTerm = self.compileTerm()
-      return {
-        'term': [term, actualTerm]
-      }
-    elif self.tokenizer.peek() == '[': 
-      opening = self.tokenizer.next()
-      expression = self.compileExpression()
-      closing = self.tokenizer.next()
-      return {
-        'term': [
-          term,
-          opening,
-          expression,
-          closing
-        ]
-      }
-    elif self.tokenizer.peek() in ['(', '.']:
-      subcall = self.compileSubroutineCallHelper([])
-      return {
-        'term': [
-          term,
-          subcall,
-        ]
-      }
-    return {
-      'term': term
-    }
+    pass  
 
   def compileExpressionList(self):
-    if self.tokenizer.peek() == ')':
-      return {'expressionList': []}
-    result = [self.compileExpression()]
-    while self.tokenizer.peek() == ',':
-      result += [self.tokenizer.next(), self.compileExpression()]
-    return {
-      'expressionList': result
-    }
+    pass
 
-class JackAnalyzer:
-  def __init__(self, filename: str):
-    self.engine = CompilationEngine(filename)
 
-  def analyze(self):
-    result = self.engine.compileClass()
-    xml = dicttoxml(result, attr_type = False, root=False)
-    dom = parseString(xml).toprettyxml()
-    formatted = '\n'.join([x.replace('\t', '  ') for x in dom.replace('<item>', '').replace('</item>', '').replace('<item/>', '').split('\n')[1:] if x.strip()])
-    # TODO: replace <emptytag/> with <emptytag></emptytag>
-    with open(self.engine.outfile, 'w') as f:
-      f.write(formatted)
-
-if __name__ == '__main__':
-  parser = argparse.ArgumentParser(description='Compiler')
-  parser.add_argument('filename', help='input file')
-  args = parser.parse_args()
-  analyzer = JackAnalyzer(args.filename)
-  analyzer.analyze()
+# Seven : Tests how the compiler handles a simple program containing an
+# arithmetic e?pression with integer constants, a do statement, and a return
+# statement. Specifically, the program computes the e?pression and
+# prints its value at the top left of the screen. To test whether your compiler
+# has translated the program correctly, run the translated code in the VM
+# emulator, and verify that it displays 7 correctly.
+# ConvertToBin : Tests how the compiler handles all the procedural elements of
+# the Jack language: e?pressions (without arrays or method calls), functions,
+# and the statements if , while , do , let , and return . The program does not test the
+# handling of methods, constructors, arrays, strings, static variables, and field
+# variables. Specifically, the program gets a 16-bit decimal value from
+# RAM[8000] , converts it to binary, and stores the individual bits in RAM[8001 …
+# 8016] (each location will contain 0 or 1 ). Before the conversion starts, the
+# program initiali?es RAM[8001 … 8016] to . To test whether your compiler has
+# translated the program correctly, load the translated code into the VM
+# emulator, and proceed as follows:
+# Put (interactively, using the emulator’s GUI) some decimal value in
+# RAM[8000] .
+# Run the program for a few seconds, then stop its e?ecution.
+# Check (by visual inspection) that memory locations RAM[8001 … 8016]
+# contain the correct bits and that none of them contains .
+# Square : Tests how the compiler handles the object-based features of the Jack
+# language: constructors, methods, fields, and e?pressions that include
+# method calls. Does not test the handling of static variables. Specifically, this
+# multiclass program stages a simple interactive game that enables moving a
+# black square around the screen using the keyboard’s four arrow keys.
+# While moving, the si?e of the square can be increased and decreased by
+# pressing the z and x keys, respectively. To quit the game, press the q key. To
+# test whether your compiler has translated the program correctly, run the
+# translated code in the VM emulator, and verify that the game works as
+# e?pected.
+# Average : Tests how the compiler handles arrays and strings. This is done by
+# computing the average of a user-supplied sequence of integers. To test
+# whether your compiler has translated the program correctly, run the
+# translated code in the VM emulator, and follow the instructions displayed
+# on the screen.
+# Pong : A complete test of how the compiler handles an object-based
+# application, including the handling of objects and static variables. In the
+# classical Pong game, a ball is moving randomly, bouncing off the edges of
+# the screen. The user tries to hit the ball with a small paddle that can be
+# moved by pressing the keyboard’s left and right arrow keys. Each time the
+# paddle hits the ball, the user scores a point and the paddle shrinks a little,
+# making the game increasingly more challenging. If the user misses and the
+# ball hits the bottom the game is over. To test whether your compiler has
+# translated this program correctly, run the translated code in the VM
+# emulator and play the game. Make sure to score some points to test the part
+# of the program that displays the score on the screen.
+# ComplexArrays : Tests how the compiler handles comple? array references
+# and e?pressions. To that end, the program performs five comple?
+# calculations using arrays. For each such calculation, the program prints on
+# the screen the e?pected result along with the result computed by the
+# compiled program. To test whether your compiler has translated the
+# program correctly, run the translated code in the VM emulator, and make
+# sure that the e?pected and actual results are identical.
