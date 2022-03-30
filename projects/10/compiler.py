@@ -118,6 +118,8 @@ class CompilationEngine:
         result.append(self.compileClassVarDec())
       elif peek in ['constructor', 'function', 'method']:
         result.append(self.compileSubroutine())
+      else:
+        raise Exception('Unexpected token: ', self.tokenizer.current(), result, peek)
     result.append(self.tokenizer.current())
     return {
       'class': result
@@ -134,7 +136,7 @@ class CompilationEngine:
       name,
       symbol,
     ]
-    while symbol == ',':
+    while self.tokenizer.token == ',':
       name = self.tokenizer.next()
       symbol = self.tokenizer.next()
       result += [
@@ -151,20 +153,22 @@ class CompilationEngine:
     name = self.tokenizer.next()
     popening = self.tokenizer.next()
     parameters = self.compileParameterList()
-    sopen = self.tokenizer.next()
     result = [
       declaration,
       returnType,
       name,
       popening,
       parameters,
-      sopen
     ]
+    subroutine = [self.tokenizer.next()]
     while self.tokenizer.peek() == 'var':
-      result.append(self.compileVarDec())
+      subroutine.append(self.compileVarDec())
     statements = self.compileStatements()
     sclosing = self.tokenizer.next()
-    result += [statements, sclosing]
+    subroutine += [statements, sclosing]
+    result.append({
+      'subroutineBody': subroutine
+    })
     return {
       'subroutineDec': result
     }
@@ -173,15 +177,18 @@ class CompilationEngine:
     result = []
     while self.tokenizer.peek() != ')':
       result.append(self.tokenizer.next())
+      result.append(self.tokenizer.next())
       symbol = self.tokenizer.next()
-      if symbol != ',':
+      if self.tokenizer.token != ',':
         return [
           {'parameterList': result},
           symbol
         ]
       result.append(symbol)
-    if not len(result):
-      return [self.tokenizer.next()]
+    return [
+       {'parameterList': result},
+      self.tokenizer.next()
+    ]
 
   def compileVarDec(self):
     declaration = self.tokenizer.next()
@@ -194,7 +201,7 @@ class CompilationEngine:
       name,
       symbol,
     ]
-    while symbol == ',':
+    while self.tokenizer.token == ',':
       name = self.tokenizer.next()
       symbol = self.tokenizer.next()
       result += [
@@ -210,30 +217,40 @@ class CompilationEngine:
     while (peek := self.tokenizer.peek()) != '}':
       if peek == 'do':
         result.append(self.compileDo())
-      if peek == 'let':
+      elif peek == 'let':
         result.append(self.compileLet())
-      if peek == 'while':
+      elif peek == 'while':
         result.append(self.compileWhile())
-      if peek == 'if':
+      elif peek == 'if':
         result.append(self.compileIf())
-      if peek == 'return':
+      elif peek == 'return':
         result.append(self.compileReturn())
+      else:
+        raise Exception('Unexpected statement token: ', self.tokenizer.current(), peek)
     return {
       'statements': result
     }
 
-  def compileSubroutineCall(self):
-    name = self.tokenizer.next()
-    result = [name]
+  def compileExpressionListHelper(self):
+    eopen = self.tokenizer.next()
+    expressionList = self.compileExpressionList()
+    eclose = self.tokenizer.next()
+    return [eopen, expressionList, eclose]
+
+  def compileSubroutineCallHelper(self, result):
     if self.tokenizer.peek() == '.':
       dot = self.tokenizer.next()
       call = self.tokenizer.next()
       result += [dot, call]
-    eopen = self.tokenizer.next()
-    expressionList = self.compileExpressionList()
-    eclose = self.tokenizer.next()
-    result += [eopen, expressionList, eclose]
+    result += self.compileExpressionListHelper()
     return result
+
+  def compileSubroutineCall(self):
+    name = self.tokenizer.next()
+    result = [name]
+    self.compileSubroutineCallHelper(result)
+    return result
+
 
   def compileDo(self):
     do = self.tokenizer.next()
@@ -342,7 +359,7 @@ class CompilationEngine:
 
   def compileTerm(self):
     term = self.tokenizer.next()
-    if term == '(': # Expression
+    if self.tokenizer.token == '(': # Expression
       expression = self.compileExpression()
       closing = self.tokenizer.next()
       return {
@@ -352,7 +369,7 @@ class CompilationEngine:
           closing
         ]
       }
-    elif term in ['-', '~']: # Unary operator
+    elif self.tokenizer.token in ['-', '~']: # Unary operator
       actualTerm = self.compileTerm()
       return {
         'term': [term, actualTerm]
@@ -369,16 +386,12 @@ class CompilationEngine:
           closing
         ]
       }
-    elif self.tokenizer.peek() == '(':
-      opening = self.tokenizer.next()
-      subcall = self.compileSubroutineCall()
-      closing = self.tokenizer.next()
+    elif self.tokenizer.peek() in ['(', '.']:
+      subcall = self.compileSubroutineCallHelper([])
       return {
         'term': [
           term,
-          opening,
           subcall,
-          closing
         ]
       }
     return {
@@ -388,7 +401,7 @@ class CompilationEngine:
   def compileExpressionList(self):
     if self.tokenizer.peek() == ')':
       return {'expressionList': []}
-    result = self.compileExpression()
+    result = [self.compileExpression()]
     while self.tokenizer.peek() == ',':
       result += [self.tokenizer.next(), self.compileExpression()]
     return {
@@ -404,6 +417,7 @@ class JackAnalyzer:
     xml = dicttoxml(result, attr_type = False, root=False)
     dom = parseString(xml).toprettyxml()
     formatted = '\n'.join([x.replace('\t', '  ') for x in dom.replace('<item>', '').replace('</item>', '').replace('<item/>', '').split('\n')[1:] if x.strip()])
+    # TODO: replace <emptytag/> with <emptytag></emptytag>
     with open(self.engine.outfile, 'w') as f:
       f.write(formatted)
 
