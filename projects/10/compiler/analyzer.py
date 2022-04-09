@@ -158,7 +158,7 @@ class CompilationEngine:
       returnType,
       name,
       popening,
-      parameters,
+      *parameters,
     ]
     subroutine = [self.tokenizer.next()]
     while self.tokenizer.peek() == 'var':

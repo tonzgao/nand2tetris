@@ -30,6 +30,17 @@ class SymbolTable:
 class VMWriter:
   def __init__(self, filename):
     self.f = open(filename, 'w')
+    self.arithmetic = {
+      '+': 'add',
+      '-': 'sub',
+      '*': 'call Math.multiply 2',
+      '/': 'call Math.divide 2',
+      '&': 'and',
+      '|': 'or',
+      '<': 'lt',
+      '>': 'gt',
+      '=': 'eq'
+    }
 
   def write(self, text):
     self.f.write(f'{text}\n')
@@ -41,7 +52,7 @@ class VMWriter:
     self.write(f'pop {segment} {index}')
 
   def writeArithmetic(self, command):
-    self.write(command)
+    self.write(self.arithmetic[command])
 
   def writeLabel(self, label):
     self.write(f'label {label}')
@@ -64,325 +75,161 @@ class VMWriter:
   def close(self):
     self.f.close()
 
+# Really should not be in python
 class CompilationEngine:
   def __init__(self, filename):
-    self.tokenizer = JackTokenizer(filename)
+    self.classSymbols = SymbolTable()
+    self.subSymbols = SymbolTable()
     self.writer = VMWriter(filename.replace('.jack', '.vm'))
-    self.tokenizer.removeComments()
+    self.analyzer = XMLEngine(filename)
 
   def compileClass(self):
-    declaration = self.tokenizer.next()
-    className = self.tokenizer.next()
-    opening = self.tokenizer.next()
-    result = [
-      declaration,
-      className,
-      opening,
-    ]
-    while (peek := self.tokenizer.peek()) != '}':
-      if peek in ['field', 'static']:
-        result.append(self.compileClassVarDec())
-      elif peek in ['constructor', 'function', 'method']:
-        result.append(self.compileSubroutine())
+    self.classSymbols.reset()
+    json = self.analyzer.compileClass()
+    className = json['class'][1]['identifier']
+    for i in json['class']:
+      print('class', i)
+      if 'subroutineDec' in i:
+        self.compileSubroutine(i['subroutineDec'], className)
+      elif 'classVarDec' in i:
+        self.compileClassVarDec(i['classVarDec'])
+
+  def compileClassVarDec(self, varDec):
+    # Attach to symbol table - field, static
+    pass
+    
+  def compileSubroutine(self, subroutine, className):
+    self.subSymbols.reset()
+    subType = subroutine[0]['keyword']
+    returnType = subroutine[1]['keyword']
+    if subType == 'method':
+      self.subSymbols.define('this', subroutine[2]['keyword'], 'argument')
+    self.compileParameterList(subroutine[4]['parameterList'])
+    for i in subroutine[6:]:
+      if 'varDec' in i:
+        self.compileVarDec(i['varDec'])
+      if 'subroutineBody' in i:
+        locals = self.subSymbols.varCount('local')
+        self.writer.writeFunction(f'{className}.{subroutine[2]["identifier"]}', locals)
+        if subType == 'method':
+          self.writer.writePush('argument', 0)
+          self.writer.writePop('pointer', 0)
+        elif subType == 'constructor':
+          'TODO'
+        self.compileSubroutineBody(i['subroutineBody'])
+        if returnType == 'void':
+          'TODO'
+
+  
+  def compileParameterList(self, parameterList):
+    # method int distance(Point other) {
+    # this, Point, argument, 0
+    # other, Point, argument, 1
+    # Attach to symbol table - kind local
+    pass
+
+  def compileSubroutineBody(self, body):
+    for i in body:
+      # print('subbody', i)
+      if 'statements' in i:
+        self.compileStatements(i['statements'])
+      elif 'varDec' in i:
+        self.compileVarDec(i['varDec'])
+
+  def compileVarDec(self, varDec):
+    # Attach to symbol table
+    pass
+    
+  def compileStatements(self, statements):
+    for i in statements:
+      # print('statements', i)
+      if 'letStatement' in i:
+        self.compileLet(i['letStatement'])
+      elif 'ifStatement' in i:
+        self.compileIf(i['ifStatement'])
+      elif 'whileStatement' in i:
+        self.compileWhile(i['whileStatement'])
+      elif 'doStatement' in i:
+        self.compileDo(i['doStatement'])
+      elif 'returnStatement' in i:
+        self.compileReturn(i['returnStatement'])
+
+  def compileLet(self, let):
+    for i in let:
+      print('let', i)
+
+  def compileIf(self, ifStatement):
+    for i in ifStatement:
+      print('if', i)
+
+  def compileWhile(self, whileStatement):
+    for i in whileStatement:
+      print('while', i)
+
+  def compileDo(self, do):
+    call = do[1]
+    method = f'{call[0]["identifier"]}.{call[2]["identifier"]}' if call[1].get('symbol') == '.' else call[0]['identifier']
+    exprs = [x for x in call if 'expressionList' in x][0]
+    size = self.compileExpressionList(exprs)
+    self.writer.writeCall(method, size)
+
+  def compileReturn(self, returnStatement):
+    expression = returnStatement[1]
+    if 'expression' in expression:
+      self.compileExpression(expression['expression'])
+    self.writer.writeReturn()
+
+  def compileExpression(self, expr):
+    symbol = None
+    print('expr', expr)
+    for i in expr:
+      if 'symbol' in i:
+        symbol = i['symbol']
+      elif symbol:
+        self.compileTerm(i['term'])
+        self.writer.writeArithmetic(symbol)
+        symbol = None
       else:
-        raise Exception('Unexpected token: ', self.tokenizer.current(), result, peek)
-    result.append(self.tokenizer.current())
-    return {
-      'class': result
-    }
+        self.compileTerm(i['term'])
 
-  def compileClassVarDec(self):
-    declaration = self.tokenizer.next()
-    type = self.tokenizer.next()
-    name = self.tokenizer.next()
-    symbol = self.tokenizer.next()
-    result = [
-      declaration,
-      type,
-      name,
-      symbol,
-    ]
-    while self.tokenizer.token == ',':
-      name = self.tokenizer.next()
-      symbol = self.tokenizer.next()
-      result += [
-        name,
-        symbol,
-      ]
-    return {
-      'classVarDec': result
-    }
+  def compileTerm(self, term):
+    print('term', term)
+    if not isinstance(term, list):
+      # TODO: handle variables
+      self.push(term)
+    elif term[0].get('symbol') == '(':
+      self.compileExpression(term[1]['expression'])
+    elif term[0].get('symbol'):
+      self.compileTerm(term[1])
+      self.writer.writeArithmetic(term[0]['symbol'])
+    # TODO: function call
+    # TODO: array
     
-  def compileSubroutine(self):
-    declaration = self.tokenizer.next()
-    returnType = self.tokenizer.next()
-    name = self.tokenizer.next()
-    popening = self.tokenizer.next()
-    parameters = self.compileParameterList()
-    result = [
-      declaration,
-      returnType,
-      name,
-      popening,
-      parameters,
-    ]
-    subroutine = [self.tokenizer.next()]
-    while self.tokenizer.peek() == 'var':
-      subroutine.append(self.compileVarDec())
-    statements = self.compileStatements()
-    sclosing = self.tokenizer.next()
-    subroutine += [statements, sclosing]
-    result.append({
-      'subroutineBody': subroutine
-    })
-    return {
-      'subroutineDec': result
-    }
-
-  def compileParameterList(self):
-    result = []
-    while self.tokenizer.peek() != ')':
-      result.append(self.tokenizer.next())
-      result.append(self.tokenizer.next())
-      symbol = self.tokenizer.next()
-      if self.tokenizer.token != ',':
-        return [
-          {'parameterList': result},
-          symbol
-        ]
-      result.append(symbol)
-    return [
-       {'parameterList': result},
-      self.tokenizer.next()
-    ]
-
-  def compileVarDec(self):
-    declaration = self.tokenizer.next()
-    type = self.tokenizer.next()
-    name = self.tokenizer.next()
-    symbol = self.tokenizer.next()
-    result = [
-      declaration,
-      type,
-      name,
-      symbol,
-    ]
-    while self.tokenizer.token == ',':
-      name = self.tokenizer.next()
-      symbol = self.tokenizer.next()
-      result += [
-        name,
-        symbol,
-      ]
-    return {
-      'varDec': result
-    }
-    
-  def compileStatements(self):
-    result = []
-    while (peek := self.tokenizer.peek()) != '}':
-      if peek == 'do':
-        result.append(self.compileDo())
-      elif peek == 'let':
-        result.append(self.compileLet())
-      elif peek == 'while':
-        result.append(self.compileWhile())
-      elif peek == 'if':
-        result.append(self.compileIf())
-      elif peek == 'return':
-        result.append(self.compileReturn())
+  def push(self, item):
+    if 'varName' in item:
+      variable = item['varName']
+      if self.subSymbols.kindOf(variable):
+        self.writer.writePush(self.subSymbols.kindOf(variable), self.subSymbols.indexOf(variable))
       else:
-        raise Exception('Unexpected statement token: ', self.tokenizer.current(), peek)
-    return {
-      'statements': result
-    }
-
-  def compileExpressionListHelper(self):
-    eopen = self.tokenizer.next()
-    expressionList = self.compileExpressionList()
-    eclose = self.tokenizer.next()
-    return [eopen, expressionList, eclose]
-
-  def compileSubroutineCallHelper(self, result):
-    if self.tokenizer.peek() == '.':
-      dot = self.tokenizer.next()
-      call = self.tokenizer.next()
-      result += [dot, call]
-    result += self.compileExpressionListHelper()
-    return result
-
-  def compileSubroutineCall(self):
-    name = self.tokenizer.next()
-    result = [name]
-    self.compileSubroutineCallHelper(result)
-    return result
-
-
-  def compileDo(self):
-    do = self.tokenizer.next()
-    subcall = self.compileSubroutineCall()
-    semi = self.tokenizer.next()
-    return {
-      'doStatement': [
-        do,
-        subcall,
-        semi,
-      ]
-    }
-
-
-  def compileLet(self):
-    let = self.tokenizer.next()
-    name = self.tokenizer.next()
-    result = [let, name]
-    if self.tokenizer.peek() == '[':
-      opening = self.tokenizer.next()
-      expression = self.compileExpression()
-      closing = self.tokenizer.next()
-      result += [
-        opening, expression, closing
-      ]
-    equals = self.tokenizer.next()
-    expression = self.compileExpression()
-    semi = self.tokenizer.next()
-    result += [equals, expression, semi]
-    return {
-      'letStatement': result
-    }
-
-
-  def compileWhile(self):
-    wdeclare = self.tokenizer.next()
-    eopen = self.tokenizer.next()
-    expression = self.compileExpression()
-    eclose = self.tokenizer.next()
-    sopen = self.tokenizer.next()
-    statements = self.compileStatements()
-    sclose = self.tokenizer.next()
-    return {
-      'whileStatement': [
-        wdeclare,
-        eopen,
-        expression,
-        eclose,
-        sopen,
-        statements,
-        sclose
-      ]
-    }
-
-  def compileReturn(self):
-    result = [self.tokenizer.next()]
-    if self.tokenizer.peek() != ';':
-      expression = self.compileExpression()
-      result.append(expression)
-    return {
-      'returnStatement': result + [self.tokenizer.next()] # Semi
-    }
+        self.writer.writePush(self.classSymbols.kindOf(variable), self.classSymbols.indexOf(variable))
+    elif 'integerConstant' in item:
+      self.writer.writePush('constant', item['integerConstant'])
+    elif 'stringConstant' in item:
+      'TODO: handle strings'
+    # TODO: handle keyword constant?
     
 
-  def compileIf(self):
-    ifdeclare = self.tokenizer.next()
-    ifopen = self.tokenizer.next()
-    ifexpr = self.compileExpression()
-    ifclose = self.tokenizer.next()
-    sopen = self.tokenizer.next()
-    ifstatements = self.compileStatements()
-    sclose = self.tokenizer.next()
-    result = [
-      ifdeclare,
-      ifopen,
-      ifexpr,
-      ifclose,
-      sopen,
-      ifstatements,
-      sclose
-    ]
-    if self.tokenizer.peek() == 'else':
-      elsedeclare = self.tokenizer.next()
-      elseopen = self.tokenizer.next()
-      elsestatements = self.compileStatements()
-      elseclose = self.tokenizer.next()
-      result += [
-        elsedeclare,
-        elseopen,
-        elsestatements,
-        elseclose
-      ]
-    return {
-      'ifStatement': result
-    }
-
-  def compileExpression(self):
-    term = self.compileTerm()
-    result = [term]
-    while self.tokenizer.peek() in ['+', '-', '*', '/', '&', '|', '<', '>', '=']:
-      op = self.tokenizer.next()
-      result += [op, self.compileTerm()]
-    print('here', result)
-    return {
-      'expression': result
-    }
-
-  def compileTerm(self):
-    term = self.tokenizer.next()
-    if self.tokenizer.token == '(': # Expression
-      expression = self.compileExpression()
-      closing = self.tokenizer.next()
-      return {
-        'term': [
-          term,
-          expression,
-          closing
-        ]
-      }
-    elif self.tokenizer.token in ['-', '~']: # Unary operator
-      actualTerm = self.compileTerm()
-      return {
-        'term': [term, actualTerm]
-      }
-    elif self.tokenizer.peek() == '[': 
-      opening = self.tokenizer.next()
-      expression = self.compileExpression()
-      closing = self.tokenizer.next()
-      return {
-        'term': [
-          term,
-          opening,
-          expression,
-          closing
-        ]
-      }
-    elif self.tokenizer.peek() in ['(', '.']:
-      subcall = self.compileSubroutineCallHelper([])
-      return {
-        'term': [
-          term,
-          subcall,
-        ]
-      }
-    return {
-      'term': term
-    }
-
-  def compileExpressionList(self):
-    if self.tokenizer.peek() == ')':
-      return {'expressionList': []}
-    result = [self.compileExpression()]
-    while self.tokenizer.peek() == ',':
-      result += [self.tokenizer.next(), self.compileExpression()]
-    return {
-      'expressionList': result
-    }
-
+  def compileExpressionList(self, exprs):
+    for exp in exprs['expressionList']:
+      self.compileExpression(exp['expression'])
+    return len(exprs)
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Compiler')
   parser.add_argument('filename', help='input file')
   args = parser.parse_args()
   compiler = CompilationEngine(args.filename)
-  result = compiler.compileClass()
-  # print(result)
+  compiler.compileClass()
 
 # Seven : Tests how the compiler handles a simple program containing an
 # arithmetic e?pression with integer constants, a do statement, and a return
