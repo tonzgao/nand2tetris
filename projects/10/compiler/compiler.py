@@ -41,6 +41,11 @@ class VMWriter:
       '>': 'gt',
       '=': 'eq'
     }
+    self.unary = {
+      '-': 'neg',
+      '~': 'not'
+    }
+    self.label = 0
 
   def write(self, text):
     self.f.write(f'{text}\n')
@@ -50,6 +55,9 @@ class VMWriter:
 
   def writePop(self, segment, index):
     self.write(f'pop {segment} {index}')
+
+  def writeUnary(self, command):
+    self.write(self.unary[command])
 
   def writeArithmetic(self, command):
     self.write(self.arithmetic[command])
@@ -82,13 +90,21 @@ class CompilationEngine:
     self.subSymbols = SymbolTable()
     self.writer = VMWriter(filename.replace('.jack', '.vm'))
     self.analyzer = XMLEngine(filename)
+    self.label_counter = 0
+
+  def createLabel(self, name):
+    self.label_counter += 1
+    return f'{name}_{self.label_counter}'
+
+  def remember(self, identifier):
+    table = self.subSymbols if self.subSymbols.typeOf(identifier) else self.classSymbols
+    return (table.kindOf(identifier), table.indexOf(identifier))
 
   def compileClass(self):
     self.classSymbols.reset()
     json = self.analyzer.compileClass()
     className = json['class'][1]['identifier']
     for i in json['class']:
-      print('class', i)
       if 'subroutineDec' in i:
         self.compileSubroutine(i['subroutineDec'], className)
       elif 'classVarDec' in i:
@@ -103,12 +119,14 @@ class CompilationEngine:
     subType = subroutine[0]['keyword']
     returnType = subroutine[1]['keyword']
     if subType == 'method':
-      self.subSymbols.define('this', subroutine[2]['keyword'], 'argument')
+      self.subSymbols.define('this', subroutine[2]['identifier'], 'argument')
     self.compileParameterList(subroutine[4]['parameterList'])
-    for i in subroutine[6:]:
+
+    body = subroutine[6]['subroutineBody']
+    for i in body:
       if 'varDec' in i:
         self.compileVarDec(i['varDec'])
-      if 'subroutineBody' in i:
+      elif 'statements' in i:
         locals = self.subSymbols.varCount('local')
         self.writer.writeFunction(f'{className}.{subroutine[2]["identifier"]}', locals)
         if subType == 'method':
@@ -116,29 +134,20 @@ class CompilationEngine:
           self.writer.writePop('pointer', 0)
         elif subType == 'constructor':
           'TODO'
-        self.compileSubroutineBody(i['subroutineBody'])
-        if returnType == 'void':
-          'TODO'
-
-  
-  def compileParameterList(self, parameterList):
-    # method int distance(Point other) {
-    # this, Point, argument, 0
-    # other, Point, argument, 1
-    # Attach to symbol table - kind local
-    pass
-
-  def compileSubroutineBody(self, body):
-    for i in body:
-      # print('subbody', i)
-      if 'statements' in i:
         self.compileStatements(i['statements'])
-      elif 'varDec' in i:
-        self.compileVarDec(i['varDec'])
+        break
+
+  def compileParameterList(self, parameterList):
+    for i in range(0, len(parameterList), 3):
+      self.subSymbols.define(parameterList[i+1]['identifier'], parameterList[i]['keyword'], 'argument')
 
   def compileVarDec(self, varDec):
-    # Attach to symbol table
-    pass
+    type = varDec[1]['keyword']
+    for i in varDec[2:]:
+      if 'identifier' in i:
+        self.subSymbols.define(i['identifier'], type, 'local')
+    # print('varDec', varDec, self.subSymbols.table)
+        
     
   def compileStatements(self, statements):
     for i in statements:
@@ -155,33 +164,60 @@ class CompilationEngine:
         self.compileReturn(i['returnStatement'])
 
   def compileLet(self, let):
-    for i in let:
-      print('let', i)
+    # print('let', let)
+    identifier = let[1]['identifier']
+    var = self.remember(identifier)
+    expression = let[3]['expression']
+    self.compileExpression(expression)
+    # TODO: handle arrays
+    self.writer.writePop(var[0], var[1])
 
   def compileIf(self, ifStatement):
-    for i in ifStatement:
-      print('if', i)
+    endLabel = self.createLabel('ifend')
+    elseLabel = self.createLabel('else')
+    self.compileExpression(ifStatement[2]['expression'])
+    self.writer.writeUnary('~')
+    self.writer.writeIf(elseLabel)
+    self.compileStatements(ifStatement[5]['statements'])
+    self.writer.writeGoto(endLabel)
+    self.writer.writeLabel(elseLabel)
+    if len(ifStatement) > 6:
+      self.compileStatements(ifStatement[9]['statements'])
+    self.writer.writeLabel(endLabel)
 
   def compileWhile(self, whileStatement):
-    for i in whileStatement:
-      print('while', i)
+    continueLabel = self.createLabel('while')
+    terminatelabel = self.createLabel('while_end')
+    self.writer.writeLabel(continueLabel)
+    self.compileExpression(whileStatement[2]['expression'])
+    self.writer.writeUnary('~')
+    self.writer.writeIf(terminatelabel)
+    self.compileStatements(whileStatement[5]['statements'])
+    self.writer.writeGoto(continueLabel)
+    self.writer.writeLabel(terminatelabel)
 
-  def compileDo(self, do):
-    call = do[1]
+  def compileCall(self, call):
     method = f'{call[0]["identifier"]}.{call[2]["identifier"]}' if call[1].get('symbol') == '.' else call[0]['identifier']
     exprs = [x for x in call if 'expressionList' in x][0]
     size = self.compileExpressionList(exprs)
     self.writer.writeCall(method, size)
 
+  def compileDo(self, do):
+    call = do[1]
+    self.compileCall(call)
+    self.writer.writePop('temp', 0)
+
   def compileReturn(self, returnStatement):
     expression = returnStatement[1]
     if 'expression' in expression:
       self.compileExpression(expression['expression'])
+    else:
+      self.writer.writePush('constant', 0)
     self.writer.writeReturn()
 
   def compileExpression(self, expr):
+    # print('expr', expr)
     symbol = None
-    print('expr', expr)
     for i in expr:
       if 'symbol' in i:
         symbol = i['symbol']
@@ -193,17 +229,21 @@ class CompilationEngine:
         self.compileTerm(i['term'])
 
   def compileTerm(self, term):
-    print('term', term)
+    # print('term', term)
     if not isinstance(term, list):
-      # TODO: handle variables
-      self.push(term)
+      if 'identifier' in term:
+        var = self.remember(term['identifier'])
+        self.writer.writePush(var[0], var[1])
+      else:
+        self.push(term)
     elif term[0].get('symbol') == '(':
       self.compileExpression(term[1]['expression'])
     elif term[0].get('symbol'):
-      self.compileTerm(term[1])
-      self.writer.writeArithmetic(term[0]['symbol'])
-    # TODO: function call
-    # TODO: array
+      self.compileTerm(term[1]['term'])
+      self.writer.writeUnary(term[0]['symbol'])
+      # TODO: handle array
+    else:
+      self.compileCall(term)
     
   def push(self, item):
     if 'varName' in item:
@@ -216,13 +256,19 @@ class CompilationEngine:
       self.writer.writePush('constant', item['integerConstant'])
     elif 'stringConstant' in item:
       'TODO: handle strings'
-    # TODO: handle keyword constant?
-    
+    elif 'keyword' in item:
+      # TODO: handle 'this'
+      self.writer.writePush('constant', 0)
+      if item['keyword'] == 'true':
+        self.writer.writeUnary('~')
 
   def compileExpressionList(self, exprs):
+    size = 0
     for exp in exprs['expressionList']:
-      self.compileExpression(exp['expression'])
-    return len(exprs)
+      if 'expression' in exp:
+        self.compileExpression(exp['expression'])
+        size += 1
+    return size
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Compiler')
@@ -230,58 +276,3 @@ if __name__ == '__main__':
   args = parser.parse_args()
   compiler = CompilationEngine(args.filename)
   compiler.compileClass()
-
-# Seven : Tests how the compiler handles a simple program containing an
-# arithmetic e?pression with integer constants, a do statement, and a return
-# statement. Specifically, the program computes the e?pression and
-# prints its value at the top left of the screen. To test whether your compiler
-# has translated the program correctly, run the translated code in the VM
-# emulator, and verify that it displays 7 correctly.
-# ConvertToBin : Tests how the compiler handles all the procedural elements of
-# the Jack language: e?pressions (without arrays or method calls), functions,
-# and the statements if , while , do , let , and return . The program does not test the
-# handling of methods, constructors, arrays, strings, static variables, and field
-# variables. Specifically, the program gets a 16-bit decimal value from
-# RAM[8000] , converts it to binary, and stores the individual bits in RAM[8001 …
-# 8016] (each location will contain 0 or 1 ). Before the conversion starts, the
-# program initiali?es RAM[8001 … 8016] to . To test whether your compiler has
-# translated the program correctly, load the translated code into the VM
-# emulator, and proceed as follows:
-# Put (interactively, using the emulator’s GUI) some decimal value in
-# RAM[8000] .
-# Run the program for a few seconds, then stop its e?ecution.
-# Check (by visual inspection) that memory locations RAM[8001 … 8016]
-# contain the correct bits and that none of them contains .
-# Square : Tests how the compiler handles the object-based features of the Jack
-# language: constructors, methods, fields, and e?pressions that include
-# method calls. Does not test the handling of static variables. Specifically, this
-# multiclass program stages a simple interactive game that enables moving a
-# black square around the screen using the keyboard’s four arrow keys.
-# While moving, the si?e of the square can be increased and decreased by
-# pressing the z and x keys, respectively. To quit the game, press the q key. To
-# test whether your compiler has translated the program correctly, run the
-# translated code in the VM emulator, and verify that the game works as
-# e?pected.
-# Average : Tests how the compiler handles arrays and strings. This is done by
-# computing the average of a user-supplied sequence of integers. To test
-# whether your compiler has translated the program correctly, run the
-# translated code in the VM emulator, and follow the instructions displayed
-# on the screen.
-# Pong : A complete test of how the compiler handles an object-based
-# application, including the handling of objects and static variables. In the
-# classical Pong game, a ball is moving randomly, bouncing off the edges of
-# the screen. The user tries to hit the ball with a small paddle that can be
-# moved by pressing the keyboard’s left and right arrow keys. Each time the
-# paddle hits the ball, the user scores a point and the paddle shrinks a little,
-# making the game increasingly more challenging. If the user misses and the
-# ball hits the bottom the game is over. To test whether your compiler has
-# translated this program correctly, run the translated code in the VM
-# emulator and play the game. Make sure to score some points to test the part
-# of the program that displays the score on the screen.
-# ComplexArrays : Tests how the compiler handles comple? array references
-# and e?pressions. To that end, the program performs five comple?
-# calculations using arrays. For each such calculation, the program prints on
-# the screen the e?pected result along with the result computed by the
-# compiled program. To test whether your compiler has translated the
-# program correctly, run the translated code in the VM emulator, and make
-# sure that the e?pected and actual results are identical.

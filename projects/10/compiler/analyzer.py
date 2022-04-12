@@ -391,7 +391,7 @@ class CompilationEngine:
       return {
         'term': [
           term,
-          subcall,
+          *subcall,
         ]
       }
     return {
