@@ -50,11 +50,16 @@ class VMWriter:
   def write(self, text):
     self.f.write(f'{text}\n')
 
+  def getSegment(self, segment):
+    if segment == 'field':
+      return 'this'
+    return segment
+
   def writePush(self, segment, index):
-    self.write(f'push {segment} {index}')
+    self.write(f'push {self.getSegment(segment)} {index}')
 
   def writePop(self, segment, index):
-    self.write(f'pop {segment} {index}')
+    self.write(f'pop {self.getSegment(segment)} {index}')
 
   def writeUnary(self, command):
     self.write(self.unary[command])
@@ -98,7 +103,7 @@ class CompilationEngine:
 
   def remember(self, identifier):
     table = self.subSymbols if self.subSymbols.typeOf(identifier) else self.classSymbols
-    return (table.kindOf(identifier), table.indexOf(identifier))
+    return (table.kindOf(identifier), table.indexOf(identifier), table.typeOf(identifier))
 
   def compileClass(self):
     self.classSymbols.reset()
@@ -111,16 +116,19 @@ class CompilationEngine:
         self.compileClassVarDec(i['classVarDec'])
 
   def compileClassVarDec(self, varDec):
-    # Attach to symbol table - field, static
-    pass
+    kind = varDec[0]['keyword']
+    type = varDec[1].get('keyword') or varDec[1]['identifier']
+    for i in varDec[2:]:
+      if 'identifier' in i:
+        self.classSymbols.define(i['identifier'], type, kind)
     
   def compileSubroutine(self, subroutine, className):
     self.subSymbols.reset()
     subType = subroutine[0]['keyword']
-    returnType = subroutine[1]['keyword']
+    returnType = subroutine[1].get('keyword') or subroutine[1]['identifier']
     if subType == 'method':
       self.subSymbols.define('this', subroutine[2]['identifier'], 'argument')
-    self.compileParameterList(subroutine[4]['parameterList'])
+    params = self.compileParameterList(subroutine[4]['parameterList'])
 
     body = subroutine[6]['subroutineBody']
     for i in body:
@@ -130,28 +138,31 @@ class CompilationEngine:
         locals = self.subSymbols.varCount('local')
         self.writer.writeFunction(f'{className}.{subroutine[2]["identifier"]}', locals)
         if subType == 'method':
+          self.subSymbols.define('this', className, 'argument')
           self.writer.writePush('argument', 0)
           self.writer.writePop('pointer', 0)
         elif subType == 'constructor':
-          'TODO'
+          self.subSymbols.define('this', className, 'pointer')
+          self.writer.writePush('constant', params)
+          self.writer.writeCall('Memory.alloc', 1)
+          self.writer.writePop('pointer', 0)
         self.compileStatements(i['statements'])
         break
 
   def compileParameterList(self, parameterList):
     for i in range(0, len(parameterList), 3):
       self.subSymbols.define(parameterList[i+1]['identifier'], parameterList[i]['keyword'], 'argument')
+    return len(parameterList)
 
   def compileVarDec(self, varDec):
-    type = varDec[1]['keyword']
+    type = varDec[1].get('keyword') or varDec[1]['identifier']
     for i in varDec[2:]:
       if 'identifier' in i:
         self.subSymbols.define(i['identifier'], type, 'local')
-    # print('varDec', varDec, self.subSymbols.table)
         
     
   def compileStatements(self, statements):
     for i in statements:
-      # print('statements', i)
       if 'letStatement' in i:
         self.compileLet(i['letStatement'])
       elif 'ifStatement' in i:
@@ -164,7 +175,6 @@ class CompilationEngine:
         self.compileReturn(i['returnStatement'])
 
   def compileLet(self, let):
-    # print('let', let)
     identifier = let[1]['identifier']
     var = self.remember(identifier)
     expression = let[3]['expression']
@@ -181,7 +191,7 @@ class CompilationEngine:
     self.compileStatements(ifStatement[5]['statements'])
     self.writer.writeGoto(endLabel)
     self.writer.writeLabel(elseLabel)
-    if len(ifStatement) > 6:
+    if len(ifStatement) > 7:
       self.compileStatements(ifStatement[9]['statements'])
     self.writer.writeLabel(endLabel)
 
@@ -197,10 +207,17 @@ class CompilationEngine:
     self.writer.writeLabel(terminatelabel)
 
   def compileCall(self, call):
-    method = f'{call[0]["identifier"]}.{call[2]["identifier"]}' if call[1].get('symbol') == '.' else call[0]['identifier']
+    callee = call[0]["identifier"] if call[1].get('symbol') == '.' else 'this'
+    method = call[2]['identifier'] if call[1].get('symbol') == '.' else call[0]['identifier']
     exprs = [x for x in call if 'expressionList' in x][0]
-    size = self.compileExpressionList(exprs)
-    self.writer.writeCall(method, size)
+    size = 0
+    if callee[0].islower():
+      var = self.remember(callee)
+      callee = var[2]
+      self.writer.writePush(var[0], var[1])
+      size += 1
+    size += self.compileExpressionList(exprs)
+    self.writer.writeCall(f'{callee}.{method}', size)
 
   def compileDo(self, do):
     call = do[1]
@@ -216,7 +233,6 @@ class CompilationEngine:
     self.writer.writeReturn()
 
   def compileExpression(self, expr):
-    # print('expr', expr)
     symbol = None
     for i in expr:
       if 'symbol' in i:
@@ -229,7 +245,6 @@ class CompilationEngine:
         self.compileTerm(i['term'])
 
   def compileTerm(self, term):
-    # print('term', term)
     if not isinstance(term, list):
       if 'identifier' in term:
         var = self.remember(term['identifier'])
