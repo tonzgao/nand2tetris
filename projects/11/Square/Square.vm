@@ -1,5 +1,5 @@
 function Square.new 0
-push constant 8
+push constant 6
 call Memory.alloc 1
 pop pointer 0
 push argument 0
@@ -11,12 +11,12 @@ pop this 2
 push pointer 0
 call Square.draw 1
 pop temp 0
-push constant 0
+push pointer 0
 return
 function Square.dispose 0
 push argument 0
 pop pointer 0
-push constant 0
+push pointer 0
 call Memory.deAlloc 1
 pop temp 0
 push constant 0
@@ -74,14 +74,14 @@ lt
 and
 not
 if-goto else_2
-push argument 1
+push argument 0
 call Square.erase 1
 pop temp 0
 push this 2
 push constant 2
 add
 pop this 2
-push argument 1
+push argument 0
 call Square.draw 1
 pop temp 0
 goto ifend_1
@@ -97,14 +97,14 @@ push constant 2
 gt
 not
 if-goto else_4
-push argument 1
+push argument 0
 call Square.erase 1
 pop temp 0
 push this 2
 push constant 2
 sub
 pop this 2
-push argument 1
+push argument 0
 call Square.draw 1
 pop temp 0
 goto ifend_3

@@ -27,6 +27,9 @@ class SymbolTable:
   def indexOf(self, name):
     return self.table[name][2]
 
+  def __repr__(self):
+      return dict(self.table).__repr__()
+
 class VMWriter:
   def __init__(self, filename):
     self.f = open(filename, 'w')
@@ -126,8 +129,6 @@ class CompilationEngine:
     self.subSymbols.reset()
     subType = subroutine[0]['keyword']
     returnType = subroutine[1].get('keyword') or subroutine[1]['identifier']
-    if subType == 'method':
-      self.subSymbols.define('this', subroutine[2]['identifier'], 'argument')
     params = self.compileParameterList(subroutine[4]['parameterList'])
 
     body = subroutine[6]['subroutineBody']
@@ -142,17 +143,20 @@ class CompilationEngine:
           self.writer.writePush('argument', 0)
           self.writer.writePop('pointer', 0)
         elif subType == 'constructor':
+          print('constructor', className, params, subroutine[4], len(self.classSymbols.table), locals)
           self.subSymbols.define('this', className, 'pointer')
-          self.writer.writePush('constant', params)
+          self.writer.writePush('constant', params + len(self.classSymbols.table))
           self.writer.writeCall('Memory.alloc', 1)
           self.writer.writePop('pointer', 0)
         self.compileStatements(i['statements'])
         break
 
   def compileParameterList(self, parameterList):
+    count = 0
     for i in range(0, len(parameterList), 3):
       self.subSymbols.define(parameterList[i+1]['identifier'], parameterList[i]['keyword'], 'argument')
-    return len(parameterList)
+      count += 1
+    return count
 
   def compileVarDec(self, varDec):
     type = varDec[1].get('keyword') or varDec[1]['identifier']
@@ -215,17 +219,20 @@ class CompilationEngine:
       var = self.remember(callee)
       callee = var[2]
       self.writer.writePush(var[0], var[1])
+      # print('call', method, var, self.subSymbols)
       size += 1
     size += self.compileExpressionList(exprs)
     self.writer.writeCall(f'{callee}.{method}', size)
 
   def compileDo(self, do):
     call = do[1]
+    # print('call', call)
     self.compileCall(call)
     self.writer.writePop('temp', 0)
 
   def compileReturn(self, returnStatement):
     expression = returnStatement[1]
+    # print('return', expression)
     if 'expression' in expression:
       self.compileExpression(expression['expression'])
     else:
@@ -249,6 +256,8 @@ class CompilationEngine:
       if 'identifier' in term:
         var = self.remember(term['identifier'])
         self.writer.writePush(var[0], var[1])
+      elif term.get('keyword') == 'this':
+        self.writer.writePush('pointer', 0)
       else:
         self.push(term)
     elif term[0].get('symbol') == '(':

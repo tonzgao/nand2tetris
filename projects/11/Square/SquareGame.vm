@@ -1,5 +1,5 @@
 function SquareGame.new 0
-push constant 0
+push constant 2
 call Memory.alloc 1
 pop pointer 0
 push constant 0
@@ -9,7 +9,7 @@ call Square.new 3
 pop this 0
 push constant 0
 pop this 1
-push constant 0
+push pointer 0
 return
 function SquareGame.dispose 0
 push argument 0
@@ -17,7 +17,7 @@ pop pointer 0
 push this 0
 call Square.dispose 1
 pop temp 0
-push constant 0
+push pointer 0
 call Memory.deAlloc 1
 pop temp 0
 push constant 0
@@ -92,7 +92,7 @@ not
 if-goto while_end_12
 call Keyboard.keyPressed 0
 pop local 0
-push argument 1
+push argument 0
 call SquareGame.moveSquare 1
 pop temp 0
 goto while_11
@@ -179,7 +179,7 @@ not
 if-goto while_end_28
 call Keyboard.keyPressed 0
 pop local 0
-push argument 1
+push argument 0
 call SquareGame.moveSquare 1
 pop temp 0
 goto while_27
