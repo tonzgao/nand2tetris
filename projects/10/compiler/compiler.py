@@ -180,11 +180,19 @@ class CompilationEngine:
 
   def compileLet(self, let):
     identifier = let[1]['identifier']
-    var = self.remember(identifier)
     expression = let[3]['expression']
+    var = self.remember(identifier)
     self.compileExpression(expression)
-    # TODO: handle arrays
-    self.writer.writePop(var[0], var[1])
+    if let[2].get('symbol') == '[':
+      self.writer.writePush(var[0], var[1])
+      self.writer.writeArithmetic('+')
+      self.compileExpression(let[6]['expression'])
+      self.writer.writePop('temp', 0)
+      self.writer.writePop('pointer', 1)
+      self.writer.writePush('temp', 0)
+      self.writer.writePop('that', 0)
+    else:
+      self.writer.writePop(var[0], var[1])
 
   def compileIf(self, ifStatement):
     endLabel = self.createLabel('ifend')
@@ -258,6 +266,13 @@ class CompilationEngine:
         self.writer.writePush(var[0], var[1])
       elif term.get('keyword') == 'this':
         self.writer.writePush('pointer', 0)
+      elif term.get('stringConstant'):
+        string = term['stringConstant']
+        self.writer.writePush('constant', len(string))
+        self.writer.writeCall('String.new', 1)
+        for c in string:
+          self.writer.writePush('constant', ord(c))
+          self.writer.writeCall('String.appendChar', 2)
       else:
         self.push(term)
     elif term[0].get('symbol') == '(':
@@ -265,7 +280,14 @@ class CompilationEngine:
     elif term[0].get('symbol'):
       self.compileTerm(term[1]['term'])
       self.writer.writeUnary(term[0]['symbol'])
-      # TODO: handle array
+    elif term[1].get('symbol') == '[':
+      print('array', term)
+      var = self.remember(term[0]['identifier'])
+      self.writer.writePush(var[0], var[1])
+      self.compileExpression(term[2]['expression'])
+      self.writer.writeArithmetic('+')
+      self.writer.writePop('pointer', 1)
+      self.writer.writePush('that', 0)
     else:
       self.compileCall(term)
     
