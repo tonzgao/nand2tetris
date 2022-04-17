@@ -1,7 +1,7 @@
 import argparse
 from collections import Counter, defaultdict
 
-from analyzer import JackTokenizer, CompilationEngine as XMLEngine
+from analyzer import CompilationEngine as XMLEngine
 
 class SymbolTable:
   def __init__(self):
@@ -128,9 +128,7 @@ class CompilationEngine:
   def compileSubroutine(self, subroutine, className):
     self.subSymbols.reset()
     subType = subroutine[0]['keyword']
-    returnType = subroutine[1].get('keyword') or subroutine[1]['identifier']
     params = self.compileParameterList(subroutine[4]['parameterList'])
-
     body = subroutine[6]['subroutineBody']
     for i in body:
       if 'varDec' in i:
@@ -143,7 +141,6 @@ class CompilationEngine:
           self.writer.writePush('argument', 0)
           self.writer.writePop('pointer', 0)
         elif subType == 'constructor':
-          print('constructor', className, params, subroutine[4], len(self.classSymbols.table), locals)
           self.subSymbols.define('this', className, 'pointer')
           self.writer.writePush('constant', params + len(self.classSymbols.table))
           self.writer.writeCall('Memory.alloc', 1)
@@ -154,7 +151,7 @@ class CompilationEngine:
   def compileParameterList(self, parameterList):
     count = 0
     for i in range(0, len(parameterList), 3):
-      self.subSymbols.define(parameterList[i+1]['identifier'], parameterList[i]['keyword'], 'argument')
+      self.subSymbols.define(parameterList[i+1]['identifier'], parameterList[i].get('keyword') or parameterList[i]['identifier'], 'argument')
       count += 1
     return count
 
@@ -227,20 +224,17 @@ class CompilationEngine:
       var = self.remember(callee)
       callee = var[2]
       self.writer.writePush(var[0], var[1])
-      # print('call', method, var, self.subSymbols)
       size += 1
     size += self.compileExpressionList(exprs)
     self.writer.writeCall(f'{callee}.{method}', size)
 
   def compileDo(self, do):
     call = do[1]
-    # print('call', call)
     self.compileCall(call)
     self.writer.writePop('temp', 0)
 
   def compileReturn(self, returnStatement):
     expression = returnStatement[1]
-    # print('return', expression)
     if 'expression' in expression:
       self.compileExpression(expression['expression'])
     else:
@@ -281,7 +275,6 @@ class CompilationEngine:
       self.compileTerm(term[1]['term'])
       self.writer.writeUnary(term[0]['symbol'])
     elif term[1].get('symbol') == '[':
-      print('array', term)
       var = self.remember(term[0]['identifier'])
       self.writer.writePush(var[0], var[1])
       self.compileExpression(term[2]['expression'])
@@ -300,10 +293,7 @@ class CompilationEngine:
         self.writer.writePush(self.classSymbols.kindOf(variable), self.classSymbols.indexOf(variable))
     elif 'integerConstant' in item:
       self.writer.writePush('constant', item['integerConstant'])
-    elif 'stringConstant' in item:
-      'TODO: handle strings'
     elif 'keyword' in item:
-      # TODO: handle 'this'
       self.writer.writePush('constant', 0)
       if item['keyword'] == 'true':
         self.writer.writeUnary('~')
