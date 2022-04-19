@@ -1,3 +1,5 @@
+// TODO: implement freelist heap model
+
 // This file is part of www.nand2tetris.org
 // and the book "The Elements of Computing Systems"
 // by Nisan and Schocken, MIT Press.
@@ -10,7 +12,6 @@
  */ 
 class Memory {
     static Array memory;
-    // TODO: implement freelist heap model
     static int free;
 
     /** Initializes the class. */
